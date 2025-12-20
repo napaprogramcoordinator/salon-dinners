@@ -1050,11 +1050,11 @@ const SalonDinners = () => {
       <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
-            <div className="bg-gray-800 rounded-lg p-4 inline-block">
-              <img 
-                src="/logo.png" 
-                alt="Napa Institute Logo" 
-                className="h-20 mx-auto"
+            <<div className="inline-block">
+  <img
+    src="/logo.png"
+    alt="Napa Institute Logo"
+    className="h-32 mx-auto"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
@@ -1112,11 +1112,11 @@ const SalonDinners = () => {
       <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <div className="bg-gray-800 rounded-lg p-4 inline-block">
-              <img 
-                src="/logo.png" 
-                alt="Napa Institute Logo" 
-                className="h-20 mx-auto"
+            <<div className="inline-block">
+  <img
+    src="/logo.png"
+    alt="Napa Institute Logo"
+    className="h-32 mx-auto"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
@@ -1702,11 +1702,11 @@ const SalonDinners = () => {
     <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
-          <div className="bg-gray-800 rounded-lg p-4 inline-block">
-            <img 
-              src="/logo.png" 
-              alt="Napa Institute Logo" 
-              className="h-20 mx-auto"
+          <<div className="inline-block">
+  <img
+    src="/logo.png"
+    alt="Napa Institute Logo"
+    className="h-32 mx-auto"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'block';
