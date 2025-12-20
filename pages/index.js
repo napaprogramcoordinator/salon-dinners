@@ -1054,7 +1054,7 @@ const SalonDinners = () => {
               <img 
                 src="/logo.png" 
                 alt="Napa Institute Logo" 
-                className="h-37 mx-auto"
+                className="h-34 mx-auto"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
@@ -1116,7 +1116,7 @@ const SalonDinners = () => {
               <img 
                 src="/logo.png" 
                 alt="Napa Institute Logo" 
-                className="h-37 mx-auto"
+                className="h-34 mx-auto"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
@@ -1706,7 +1706,7 @@ const SalonDinners = () => {
             <img 
               src="/logo.png" 
               alt="Napa Institute Logo" 
-              className="h-37 mx-auto"
+              className="h-34 mx-auto"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'block';
