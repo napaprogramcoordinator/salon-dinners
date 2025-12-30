@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Users, CheckCircle, AlertCircle, X, Edit } from 'lucide-react';
+import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
 
 const SalonDinners = () => {
   const [currentPage, setCurrentPage] = useState('public');
@@ -39,6 +39,8 @@ const SalonDinners = () => {
   const [preferredDates, setPreferredDates] = useState([]);
   const [waitlistData, setWaitlistData] = useState([]);
   const [movingFromWaitlist, setMovingFromWaitlist] = useState(null);
+  const [showRemoveOptions, setShowRemoveOptions] = useState(null); // NEW: For delete/move modal
+  const [inviteList, setInviteList] = useState([]); // NEW: Track invite list in state
 
   const ADMIN_PASSWORD = 'salon2026';
 
@@ -73,6 +75,7 @@ const SalonDinners = () => {
     if (typeof window === 'undefined') return;
     loadRegistrations();
     loadWaitlistData();
+    loadInviteList();
     // Load saved webhook URL
     try {
       const savedWebhook = localStorage.getItem('make-webhook');
@@ -84,6 +87,18 @@ const SalonDinners = () => {
     }
   }, []);
 
+  const loadInviteList = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      const result = localStorage.getItem('invite-list');
+      if (result) {
+        setInviteList(JSON.parse(result));
+      }
+    } catch (error) {
+      console.error('Error loading invite list:', error);
+    }
+  };
+
   const loadWaitlistData = async () => {
     if (typeof window === 'undefined') return;
     try {
@@ -93,68 +108,6 @@ const SalonDinners = () => {
       }
     } catch (error) {
       console.error('Error loading waitlist:', error);
-    }
-  };
-
-  const deleteFromWaitlist = async (index) => {
-    const updated = [...waitlistData];
-    updated.splice(index, 1);
-    try {
-      localStorage.setItem('waitlist', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Error saving waitlist:', e);
-    }
-    setWaitlistData(updated);
-    setShowDeleteConfirm(null);
-    setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
-  };
-
-  const moveFromWaitlistToRegistration = async (waitlistIndex, dateId, group) => {
-    const person = waitlistData[waitlistIndex];
-    
-    // Add to registrations
-    const updatedRegistrations = { ...registrations };
-    updatedRegistrations[dateId][group].push({
-      name: person.name,
-      email: person.email,
-      phone: person.phone,
-      professionalTitle: person.professionalTitle,
-      bio: person.bio,
-      foodAllergies: person.foodAllergies,
-      picture: person.picture,
-      timestamp: new Date().toISOString(),
-      movedFromWaitlist: true
-    });
-    
-    // Remove from waitlist
-    const updatedWaitlist = [...waitlistData];
-    updatedWaitlist.splice(waitlistIndex, 1);
-    
-    // Save both
-    try {
-      // Check registration data size
-      const regString = JSON.stringify(updatedRegistrations);
-      const regSizeKB = new Blob([regString]).size / 1024;
-      console.log(`Registration data size after move: ${regSizeKB.toFixed(2)} KB`);
-      
-      // If too large, remove picture
-      if (regSizeKB > 4500) {
-        console.warn('Data size exceeds limit after moving, removing picture');
-        const lastAdded = updatedRegistrations[dateId][group][updatedRegistrations[dateId][group].length - 1];
-        lastAdded.picture = null;
-        lastAdded.pictureNote = 'Picture removed due to storage limit';
-      }
-      
-      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
-      
-      setRegistrations(updatedRegistrations);
-      setWaitlistData(updatedWaitlist);
-      setMovingFromWaitlist(null);
-      setShowAlert({ message: `${person.name} moved to registration successfully!`, type: 'success' });
-    } catch (error) {
-      console.error('Error moving from waitlist:', error);
-      setShowAlert({ message: `Error moving person: ${error.message}`, type: 'error' });
     }
   };
 
@@ -190,6 +143,203 @@ const SalonDinners = () => {
     setLoading(false);
   };
 
+  const deleteFromWaitlist = async (index) => {
+    const updated = [...waitlistData];
+    updated.splice(index, 1);
+    try {
+      localStorage.setItem('waitlist', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error saving waitlist:', e);
+    }
+    setWaitlistData(updated);
+    setShowDeleteConfirm(null);
+    setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
+  };
+
+  // NEW: Move registrant to waitlist
+  const moveRegistrantToWaitlist = async (person) => {
+    try {
+      // Create waitlist entry from registrant data
+      const waitlistEntry = {
+        name: person.name,
+        email: person.email,
+        phone: person.phone,
+        professionalTitle: person.professionalTitle,
+        bio: person.bio,
+        foodAllergies: person.foodAllergies,
+        picture: person.picture,
+        classification: person.group,
+        preferredDates: [person.dateId], // Default to their original date
+        timestamp: new Date().toISOString(),
+        movedFromRegistration: true,
+        originalDate: person.date,
+        originalLocation: person.location
+      };
+
+      // Add to waitlist
+      const updatedWaitlist = [...waitlistData, waitlistEntry];
+      
+      // Remove from registrations
+      const updatedRegistrations = { ...registrations };
+      const dateRegs = updatedRegistrations[person.dateId][person.group];
+      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      
+      if (index !== -1) {
+        updatedRegistrations[person.dateId][person.group].splice(index, 1);
+        
+        // Save both
+        localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+        
+        setWaitlistData(updatedWaitlist);
+        setRegistrations(updatedRegistrations);
+        setShowRemoveOptions(null);
+        setShowAlert({ message: `${person.name} moved to waitlist successfully!`, type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Error moving to waitlist:', error);
+      setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
+    }
+  };
+
+  // NEW: Move registrant to invite list (next year)
+  const moveRegistrantToInviteList = async (person) => {
+    try {
+      // Create invite entry from registrant data
+      const inviteEntry = {
+        name: person.name,
+        email: person.email,
+        timestamp: new Date().toISOString(),
+        movedFromRegistration: true,
+        originalDate: person.date,
+        originalLocation: person.location
+      };
+
+      // Get current invite list and add new entry
+      let currentInviteList = [];
+      try {
+        const stored = localStorage.getItem('invite-list');
+        if (stored) {
+          currentInviteList = JSON.parse(stored);
+        }
+      } catch (e) {
+        currentInviteList = [];
+      }
+      
+      const updatedInviteList = [...currentInviteList, inviteEntry];
+      
+      // Remove from registrations
+      const updatedRegistrations = { ...registrations };
+      const dateRegs = updatedRegistrations[person.dateId][person.group];
+      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      
+      if (index !== -1) {
+        updatedRegistrations[person.dateId][person.group].splice(index, 1);
+        
+        // Save both
+        localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+        
+        setInviteList(updatedInviteList);
+        setRegistrations(updatedRegistrations);
+        setShowRemoveOptions(null);
+        setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Error moving to invite list:', error);
+      setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
+    }
+  };
+
+  // NEW: Delete registrant permanently
+  const deleteRegistrantPermanently = async (person) => {
+    try {
+      const updatedRegistrations = { ...registrations };
+      const dateRegs = updatedRegistrations[person.dateId][person.group];
+      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      
+      if (index !== -1) {
+        updatedRegistrations[person.dateId][person.group].splice(index, 1);
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+        setRegistrations(updatedRegistrations);
+        setShowRemoveOptions(null);
+        setShowAlert({ message: `${person.name} has been permanently deleted.`, type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Error deleting registrant:', error);
+      setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
+    }
+  };
+
+  const moveFromWaitlistToRegistration = async (waitlistIndex, dateId, group) => {
+    const person = waitlistData[waitlistIndex];
+    
+    // Add to registrations
+    const updatedRegistrations = { ...registrations };
+    updatedRegistrations[dateId][group].push({
+      name: person.name,
+      email: person.email,
+      phone: person.phone,
+      professionalTitle: person.professionalTitle,
+      bio: person.bio,
+      foodAllergies: person.foodAllergies,
+      picture: person.picture,
+      timestamp: new Date().toISOString(),
+      movedFromWaitlist: true
+    });
+    
+    // Remove from waitlist
+    const updatedWaitlist = [...waitlistData];
+    updatedWaitlist.splice(waitlistIndex, 1);
+    
+    // Save both
+    try {
+      const regString = JSON.stringify(updatedRegistrations);
+      const regSizeKB = new Blob([regString]).size / 1024;
+      console.log(`Registration data size after move: ${regSizeKB.toFixed(2)} KB`);
+      
+      if (regSizeKB > 4500) {
+        console.warn('Data size exceeds limit after moving, removing picture');
+        const lastAdded = updatedRegistrations[dateId][group][updatedRegistrations[dateId][group].length - 1];
+        lastAdded.picture = null;
+        lastAdded.pictureNote = 'Picture removed due to storage limit';
+      }
+      
+      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+      
+      setRegistrations(updatedRegistrations);
+      setWaitlistData(updatedWaitlist);
+      setMovingFromWaitlist(null);
+      setShowAlert({ message: `${person.name} moved to registration successfully!`, type: 'success' });
+    } catch (error) {
+      console.error('Error moving from waitlist:', error);
+      setShowAlert({ message: `Error moving person: ${error.message}`, type: 'error' });
+    }
+  };
+
+  // Keep old deleteRegistrant for backwards compatibility but it now just opens the options modal
+  const deleteRegistrant = async (dateId, group, index) => {
+    console.log('deleteRegistrant called - opening options modal');
+    const person = registrations[dateId][group][index];
+    if (person) {
+      setShowRemoveOptions({
+        ...person,
+        dateId,
+        group,
+        date: eventDates.find(d => d.id === dateId)?.label,
+        location: eventDates.find(d => d.id === dateId)?.location
+      });
+    }
+    setShowDeleteConfirm(null);
+  };
+
   const handlePublicationToggle = (pubName) => {
     setFormData(prev => ({
       ...prev,
@@ -209,7 +359,6 @@ const SalonDinners = () => {
         return;
       }
       
-      // Compress the image before storing
       const reader = new FileReader();
       reader.onerror = (error) => {
         console.error('FileReader error:', error);
@@ -225,11 +374,9 @@ const SalonDinners = () => {
         img.onload = () => {
           console.log('Image loaded, original dimensions:', img.width, 'x', img.height);
           try {
-            // Create canvas to resize image
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             
-            // Calculate new dimensions (max 400x400, maintain aspect ratio)
             let width = img.width;
             let height = img.height;
             const maxSize = 400;
@@ -251,9 +398,8 @@ const SalonDinners = () => {
             
             console.log('Resizing to:', width, 'x', height);
             
-            // Draw and compress
             ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7); // 70% quality
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
             
             console.log(`Image compressed: Original ${(file.size / 1024).toFixed(1)}KB -> Compressed ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
             
@@ -335,176 +481,6 @@ const SalonDinners = () => {
     setStep('dates');
   };
 
-  const handleRegister = async () => {
-    console.log('handleRegister called');
-    console.log('isWaitlist:', isWaitlist);
-    console.log('selectedDate:', selectedDate);
-    console.log('preferredDates:', preferredDates);
-    
-    if (!isWaitlist && !selectedDate) {
-      console.log('Error: No date selected');
-      setShowAlert({ message: 'Please select a date or choose the waitlist option', type: 'error' });
-      return;
-    }
-    
-    if (isWaitlist && preferredDates.length === 0) {
-      console.log('Error: No preferred dates for waitlist');
-      setShowAlert({ message: 'Please select at least one preferred date for the waitlist', type: 'error' });
-      return;
-    }
-
-    console.log('Processing registration...');
-
-    if (isWaitlist) {
-      // Handle waitlist submission
-      console.log('Adding to waitlist');
-      const waitlistEntry = {
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        professionalTitle: formData.professionalTitle,
-        bio: formData.bio,
-        foodAllergies: formData.foodAllergies,
-        picture: formData.picture,
-        classification: classification,
-        preferredDates: preferredDates,
-        timestamp: new Date().toISOString()
-      };
-
-      try {
-        let waitlist = [];
-        try {
-          const result = localStorage.getItem('waitlist');
-          if (result) {
-            waitlist = JSON.parse(result);
-          }
-        } catch (getError) {
-          console.log('Waitlist does not exist yet, creating new one');
-          waitlist = [];
-        }
-        
-        waitlist.push(waitlistEntry);
-        console.log('Saving waitlist:', waitlist);
-        
-        const waitlistString = JSON.stringify(waitlist);
-        const waitlistSizeKB = new Blob([waitlistString]).size / 1024;
-        console.log(`Waitlist size: ${waitlistSizeKB.toFixed(2)} KB`);
-        
-        // If data is too large, try without the picture
-        if (waitlistSizeKB > 4500) {
-          console.warn('Waitlist size exceeds limit, removing picture');
-          waitlist[waitlist.length - 1].picture = null;
-          waitlist[waitlist.length - 1].pictureNote = 'Picture removed due to storage limit';
-          const reducedWaitlistString = JSON.stringify(waitlist);
-          localStorage.setItem('waitlist', reducedWaitlistString);
-          setShowAlert({ message: 'Added to waitlist! Note: Picture could not be saved due to storage limits.', type: 'success' });
-        } else {
-          localStorage.setItem('waitlist', waitlistString);
-        }
-        
-        setWaitlistData(waitlist); // Update state immediately
-        
-        // Auto-send to Make.com webhook if configured
-        if (makeWebhookUrl) {
-          try {
-            await fetch(makeWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'waitlist',
-                data: [waitlistEntry],
-                exportDate: new Date().toISOString(),
-                totalCount: 1
-              })
-            });
-          } catch (error) {
-            console.error('Make.com webhook error:', error);
-          }
-        }
-        
-        console.log('Waitlist registration successful');
-        setStep('confirmation');
-      } catch (error) {
-        console.error('Waitlist error:', error);
-        console.error('Error details:', error.message, error.stack);
-        setShowAlert({ message: `Error saving to waitlist: ${error.message}. Please try again.`, type: 'error' });
-      }
-    } else {
-      // Handle regular registration
-      console.log('Adding to regular registration for date:', selectedDate);
-      try {
-        const updatedRegistrations = { ...registrations };
-        
-        // Create the registration entry
-        const registrationEntry = {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          professionalTitle: formData.professionalTitle,
-          bio: formData.bio,
-          foodAllergies: formData.foodAllergies,
-          picture: formData.picture,
-          timestamp: new Date().toISOString()
-        };
-        
-        updatedRegistrations[selectedDate][classification].push(registrationEntry);
-        
-        // Check data size
-        const dataString = JSON.stringify(updatedRegistrations);
-        const dataSizeKB = new Blob([dataString]).size / 1024;
-        console.log(`Data size: ${dataSizeKB.toFixed(2)} KB`);
-        
-        // If data is too large, try without the picture
-        if (dataSizeKB > 4500) {
-          console.warn('Data size exceeds limit, removing picture from this registration');
-          const lastRegistrant = updatedRegistrations[selectedDate][classification][updatedRegistrations[selectedDate][classification].length - 1];
-          lastRegistrant.picture = null;
-          lastRegistrant.pictureNote = 'Picture removed due to storage limit';
-          const reducedDataString = JSON.stringify(updatedRegistrations);
-          localStorage.setItem('salon-registrations', reducedDataString);
-          setShowAlert({ message: 'Registration successful! Note: Picture could not be saved due to storage limits.', type: 'success' });
-        } else {
-          localStorage.setItem('salon-registrations', dataString);
-        }
-        
-        setRegistrations(updatedRegistrations);
-        console.log('Regular registration successful');
-        
-        // Auto-send to Make.com webhook if configured
-        if (makeWebhookUrl) {
-          try {
-            const date = eventDates.find(d => d.id === selectedDate);
-            const registrantData = {
-              ...registrationEntry,
-              date: date?.label,
-              location: date?.location,
-              dateId: selectedDate,
-              group: classification
-            };
-            await fetch(makeWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'registrants',
-                data: [registrantData],
-                exportDate: new Date().toISOString(),
-                totalCount: 1
-              })
-            });
-          } catch (error) {
-            console.error('Make.com webhook error:', error);
-          }
-        }
-        
-        setStep('confirmation');
-      } catch (error) {
-        console.error('Registration error:', error);
-        console.error('Error details:', error.message, error.stack);
-        setShowAlert({ message: `Error completing registration: ${error.message}. Please try again.`, type: 'error' });
-      }
-    }
-  };
-
   const handleReset = () => {
     setStep('form');
     setFormData({ 
@@ -550,6 +526,168 @@ const SalonDinners = () => {
       );
     }
     return filtered;
+  };
+
+  const handleRegister = async () => {
+    console.log('handleRegister called');
+    console.log('isWaitlist:', isWaitlist);
+    console.log('selectedDate:', selectedDate);
+    console.log('preferredDates:', preferredDates);
+    
+    if (!isWaitlist && !selectedDate) {
+      console.log('Error: No date selected');
+      setShowAlert({ message: 'Please select a date or choose the waitlist option', type: 'error' });
+      return;
+    }
+    
+    if (isWaitlist && preferredDates.length === 0) {
+      console.log('Error: No preferred dates for waitlist');
+      setShowAlert({ message: 'Please select at least one preferred date for the waitlist', type: 'error' });
+      return;
+    }
+
+    console.log('Processing registration...');
+
+    if (isWaitlist) {
+      console.log('Adding to waitlist');
+      const waitlistEntry = {
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        professionalTitle: formData.professionalTitle,
+        bio: formData.bio,
+        foodAllergies: formData.foodAllergies,
+        picture: formData.picture,
+        classification: classification,
+        preferredDates: preferredDates,
+        timestamp: new Date().toISOString()
+      };
+
+      try {
+        let waitlist = [];
+        try {
+          const result = localStorage.getItem('waitlist');
+          if (result) {
+            waitlist = JSON.parse(result);
+          }
+        } catch (getError) {
+          console.log('Waitlist does not exist yet, creating new one');
+          waitlist = [];
+        }
+        
+        waitlist.push(waitlistEntry);
+        console.log('Saving waitlist:', waitlist);
+        
+        const waitlistString = JSON.stringify(waitlist);
+        const waitlistSizeKB = new Blob([waitlistString]).size / 1024;
+        console.log(`Waitlist size: ${waitlistSizeKB.toFixed(2)} KB`);
+        
+        if (waitlistSizeKB > 4500) {
+          console.warn('Waitlist size exceeds limit, removing picture');
+          waitlist[waitlist.length - 1].picture = null;
+          waitlist[waitlist.length - 1].pictureNote = 'Picture removed due to storage limit';
+          const reducedWaitlistString = JSON.stringify(waitlist);
+          localStorage.setItem('waitlist', reducedWaitlistString);
+          setShowAlert({ message: 'Added to waitlist! Note: Picture could not be saved due to storage limits.', type: 'success' });
+        } else {
+          localStorage.setItem('waitlist', waitlistString);
+        }
+        
+        setWaitlistData(waitlist);
+        
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'waitlist',
+                data: [waitlistEntry],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
+        }
+        
+        console.log('Waitlist registration successful');
+        setStep('confirmation');
+      } catch (error) {
+        console.error('Waitlist error:', error);
+        console.error('Error details:', error.message, error.stack);
+        setShowAlert({ message: `Error saving to waitlist: ${error.message}. Please try again.`, type: 'error' });
+      }
+    } else {
+      console.log('Adding to regular registration for date:', selectedDate);
+      try {
+        const updatedRegistrations = { ...registrations };
+        
+        const registrationEntry = {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          professionalTitle: formData.professionalTitle,
+          bio: formData.bio,
+          foodAllergies: formData.foodAllergies,
+          picture: formData.picture,
+          timestamp: new Date().toISOString()
+        };
+        
+        updatedRegistrations[selectedDate][classification].push(registrationEntry);
+        
+        const dataString = JSON.stringify(updatedRegistrations);
+        const dataSizeKB = new Blob([dataString]).size / 1024;
+        console.log(`Data size: ${dataSizeKB.toFixed(2)} KB`);
+        
+        if (dataSizeKB > 4500) {
+          console.warn('Data size exceeds limit, removing picture from this registration');
+          const lastRegistrant = updatedRegistrations[selectedDate][classification][updatedRegistrations[selectedDate][classification].length - 1];
+          lastRegistrant.picture = null;
+          lastRegistrant.pictureNote = 'Picture removed due to storage limit';
+          const reducedDataString = JSON.stringify(updatedRegistrations);
+          localStorage.setItem('salon-registrations', reducedDataString);
+          setShowAlert({ message: 'Registration successful! Note: Picture could not be saved due to storage limits.', type: 'success' });
+        } else {
+          localStorage.setItem('salon-registrations', dataString);
+        }
+        
+        setRegistrations(updatedRegistrations);
+        console.log('Regular registration successful');
+        
+        if (makeWebhookUrl) {
+          try {
+            const date = eventDates.find(d => d.id === selectedDate);
+            const registrantData = {
+              ...registrationEntry,
+              date: date?.label,
+              location: date?.location,
+              dateId: selectedDate,
+              group: classification
+            };
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                data: [registrantData],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
+        }
+        
+        setStep('confirmation');
+      } catch (error) {
+        console.error('Registration error:', error);
+        console.error('Error details:', error.message, error.stack);
+        setShowAlert({ message: `Error completing registration: ${error.message}. Please try again.`, type: 'error' });
+      }
+    }
   };
 
   const exportToCSV = () => {
@@ -673,21 +811,6 @@ const SalonDinners = () => {
     }
   };
 
-  const deleteRegistrant = async (dateId, group, index) => {
-    console.log('Delete clicked:', { dateId, group, index });
-    const updatedRegistrations = { ...registrations };
-    updatedRegistrations[dateId][group].splice(index, 1);
-    try {
-      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-    } catch (e) {
-      console.error('Error saving registrations:', e);
-    }
-    setRegistrations(updatedRegistrations);
-    setShowDeleteConfirm(null);
-    setShowAlert({ message: 'Registration deleted successfully!', type: 'success' });
-    console.log('Deleted successfully');
-  };
-
   const startEditRegistrant = (person) => {
     console.log('Starting edit for:', person);
     setEditingRegistrant({
@@ -719,7 +842,6 @@ const SalonDinners = () => {
         return;
       }
       
-      // Compress the image before storing
       const reader = new FileReader();
       reader.onloadend = () => {
         const img = new Image();
@@ -762,7 +884,6 @@ const SalonDinners = () => {
     console.log('Saving edited registrant');
     const { original, edited } = editingRegistrant;
     
-    // Validation
     if (!edited.name || !edited.email || !edited.bio) {
       setShowAlert({ message: 'Please fill in all required fields', type: 'error' });
       return;
@@ -770,7 +891,6 @@ const SalonDinners = () => {
 
     const updatedRegistrations = { ...registrations };
     
-    // Find and remove the original entry
     const dateRegs = updatedRegistrations[original.dateId][original.group];
     const originalIndex = dateRegs.findIndex(p => 
       p.email === original.email && p.timestamp === original.timestamp
@@ -779,10 +899,8 @@ const SalonDinners = () => {
     console.log('Found original at index:', originalIndex);
     
     if (originalIndex !== -1) {
-      // Remove from original location
       updatedRegistrations[original.dateId][original.group].splice(originalIndex, 1);
       
-      // Add to new location (could be same or different date/group)
       updatedRegistrations[edited.dateId][edited.group].push({
         name: edited.name,
         email: edited.email,
@@ -791,7 +909,7 @@ const SalonDinners = () => {
         bio: edited.bio,
         foodAllergies: edited.foodAllergies,
         picture: edited.picture,
-        timestamp: original.timestamp // Keep original timestamp
+        timestamp: original.timestamp
       });
       
       try {
@@ -840,20 +958,20 @@ const SalonDinners = () => {
     };
     
     try {
-      let inviteList = [];
+      let inviteListData = [];
       try {
         const result = localStorage.getItem('invite-list');
         if (result) {
-          inviteList = JSON.parse(result);
+          inviteListData = JSON.parse(result);
         }
       } catch (e) {
-        inviteList = [];
+        inviteListData = [];
       }
       
-      inviteList.push(inviteData);
-      localStorage.setItem('invite-list', JSON.stringify(inviteList));
+      inviteListData.push(inviteData);
+      localStorage.setItem('invite-list', JSON.stringify(inviteListData));
+      setInviteList(inviteListData);
       
-      // Auto-send to Make.com webhook if configured
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -879,7 +997,6 @@ const SalonDinners = () => {
     }
   };
 
-  // Edit Modal - defined here so it can be used in all return statements
   const EditModal = () => {
     if (!editingRegistrant) return null;
 
@@ -1033,6 +1150,76 @@ const SalonDinners = () => {
               Save Changes
             </button>
           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // NEW: Remove Options Modal Component
+  const RemoveOptionsModal = () => {
+    if (!showRemoveOptions) return null;
+
+    const person = showRemoveOptions;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Remove Registration</h3>
+          <p className="text-gray-600 mb-6">
+            What would you like to do with <strong>{person.name}</strong>'s registration for {person.date}?
+          </p>
+          
+          <div className="space-y-3">
+            {/* Move to Waitlist Option */}
+            <button 
+              onClick={() => moveRegistrantToWaitlist(person)}
+              className="w-full flex items-center p-4 border-2 border-orange-200 bg-orange-50 rounded-lg hover:border-orange-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                <Clock className="w-5 h-5 text-orange-600" />
+              </div>
+              <div>
+                <div className="font-semibold text-gray-800">Move to Waitlist</div>
+                <div className="text-sm text-gray-600">Keep them for future openings this year</div>
+              </div>
+            </button>
+
+            {/* Move to Invite List Option */}
+            <button 
+              onClick={() => moveRegistrantToInviteList(person)}
+              className="w-full flex items-center p-4 border-2 border-blue-200 bg-blue-50 rounded-lg hover:border-blue-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                <Mail className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <div className="font-semibold text-gray-800">Move to Invite List</div>
+                <div className="text-sm text-gray-600">Add to next year's invitation list</div>
+              </div>
+            </button>
+
+            {/* Delete Permanently Option */}
+            <button 
+              onClick={() => deleteRegistrantPermanently(person)}
+              className="w-full flex items-center p-4 border-2 border-red-200 bg-red-50 rounded-lg hover:border-red-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <div className="font-semibold text-red-700">Delete Permanently</div>
+                <div className="text-sm text-red-600">Remove completely (cannot be undone)</div>
+              </div>
+            </button>
+          </div>
+
+          {/* Cancel Button */}
+          <button 
+            onClick={() => setShowRemoveOptions(null)}
+            className="w-full mt-4 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       </div>
     );
@@ -1284,19 +1471,18 @@ const SalonDinners = () => {
                                 <Edit className="w-4 h-4 mr-1" />
                                 Edit
                               </button>
+                              {/* UPDATED: Now opens the Remove Options modal */}
                               <button
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  console.log('Delete button clicked!', person);
-                                  const dateRegs = registrations[person.dateId][person.group];
-                                  const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
-                                  console.log('Found index:', index);
-                                  setShowDeleteConfirm({ dateId: person.dateId, group: person.group, index, name: person.name });
+                                  console.log('Remove button clicked!', person);
+                                  setShowRemoveOptions(person);
                                 }}
-                                className="text-red-600 hover:text-red-700 text-sm"
+                                className="text-red-600 hover:text-red-700 text-sm flex items-center"
                               >
-                                Delete
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Remove
                               </button>
                             </div>
                           </div>
@@ -1527,14 +1713,8 @@ const SalonDinners = () => {
         {/* Edit Modal */}
         <EditModal />
 
-        {/* Debug Info - Remove in production */}
-        {(showDeleteConfirm || showAlert || editingRegistrant) && (
-          <div className="fixed top-4 right-4 bg-yellow-100 border-2 border-yellow-500 p-2 rounded text-xs z-[60]">
-            <div>Edit: {editingRegistrant ? '✅' : '❌'}</div>
-            <div>Delete: {showDeleteConfirm ? '✅' : '❌'}</div>
-            <div>Alert: {showAlert ? '✅' : '❌'}</div>
-          </div>
-        )}
+        {/* NEW: Remove Options Modal */}
+        <RemoveOptionsModal />
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
@@ -2249,14 +2429,8 @@ const SalonDinners = () => {
       {/* Edit Modal */}
       <EditModal />
 
-      {/* Debug Info - Remove in production */}
-      {(showDeleteConfirm || showAlert || editingRegistrant) && (
-        <div className="fixed top-4 right-4 bg-yellow-100 border-2 border-yellow-500 p-2 rounded text-xs z-[60]">
-          <div>Edit: {editingRegistrant ? '✅' : '❌'}</div>
-          <div>Delete: {showDeleteConfirm ? '✅' : '❌'}</div>
-          <div>Alert: {showAlert ? '✅' : '❌'}</div>
-        </div>
-      )}
+      {/* NEW: Remove Options Modal */}
+      <RemoveOptionsModal />
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
