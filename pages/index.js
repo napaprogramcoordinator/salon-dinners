@@ -673,6 +673,15 @@ const SalonDinners = () => {
     setStep('dates');
   };
 
+  // Go back to form WITHOUT clearing data (for Back button on date selection)
+  const goBackToForm = () => {
+    setStep('form');
+    setSelectedDate('');
+    setIsWaitlist(false);
+    setPreferredDates([]);
+  };
+
+  // Full reset - clears all form data (for "Register Another Person" or "Start Over")
   const handleReset = () => {
     setStep('form');
     setFormData({ 
@@ -1143,7 +1152,7 @@ const SalonDinners = () => {
       setAdminPassword('');
       setShowAdminLogin(false);
       setShowAlert(null);
-  } else {
+    } else {
       setShowAlert({ message: 'Incorrect password', type: 'error' });
       setAdminPassword('');
     }
@@ -2013,58 +2022,58 @@ const SalonDinners = () => {
         {/* Move from Waitlist Modal */}
         {movingFromWaitlist && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">
-              Move {movingFromWaitlist.person.name} to Registration
-            </h3>
-            <p className="text-gray-600 mb-4">Select the date and group to move this person to:</p>
-            
-            <div className="space-y-3 max-h-96 overflow-y-auto mb-6">
-              {eventDates.map((date) => {
-                const dateRegs = registrations[date.id];
-                const groups = ['liberal', 'moderate', 'conservative'];
-                
-                return (
-                  <div key={date.id} className="border border-gray-200 rounded-lg p-3">
-                    <div className="font-semibold text-gray-800 mb-2 flex items-center">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      {date.label} - {date.location}
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6">
+              <h3 className="text-xl font-bold text-gray-800 mb-4">
+                Move {movingFromWaitlist.person.name} to Registration
+              </h3>
+              <p className="text-gray-600 mb-4">Select the date and group to move this person to:</p>
+              
+              <div className="space-y-3 max-h-96 overflow-y-auto mb-6">
+                {eventDates.map((date) => {
+                  const dateRegs = registrations[date.id];
+                  const groups = ['liberal', 'moderate', 'conservative'];
+                  
+                  return (
+                    <div key={date.id} className="border border-gray-200 rounded-lg p-3">
+                      <div className="font-semibold text-gray-800 mb-2 flex items-center">
+                        <Calendar className="w-4 h-4 mr-2" />
+                        {date.label} - {date.location}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 ml-6">
+                        {groups.map(group => {
+                          const count = dateRegs[group].length;
+                          const isFull = count >= 5;
+                          return (
+                            <button
+                              key={group}
+                              onClick={() => moveFromWaitlistToRegistration(movingFromWaitlist.index, date.id, group)}
+                              disabled={isFull}
+                              className={`px-3 py-2 rounded text-sm font-medium ${
+                                isFull
+                                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
+                              }`}
+                            >
+                              {group.charAt(0).toUpperCase() + group.slice(1)}
+                              <br />
+                              <span className="text-xs">({count}/5)</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 ml-6">
-                      {groups.map(group => {
-                        const count = dateRegs[group].length;
-                        const isFull = count >= 5;
-                        return (
-                          <button
-                            key={group}
-                            onClick={() => moveFromWaitlistToRegistration(movingFromWaitlist.index, date.id, group)}
-                            disabled={isFull}
-                            className={`px-3 py-2 rounded text-sm font-medium ${
-                              isFull
-                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                : 'bg-green-100 text-green-700 hover:bg-green-200'
-                            }`}
-                          >
-                            {group.charAt(0).toUpperCase() + group.slice(1)}
-                            <br />
-                            <span className="text-xs">({count}/5)</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              
+              <button
+                onClick={() => setMovingFromWaitlist(null)}
+                className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300"
+              >
+                Cancel
+              </button>
             </div>
-            
-            <button
-              onClick={() => setMovingFromWaitlist(null)}
-              className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300"
-            >
-              Cancel
-            </button>
           </div>
-        </div>
         )}
       </div>
     );
@@ -2455,10 +2464,10 @@ const SalonDinners = () => {
                     </p>
                     <div className="flex space-x-3 justify-center">
                       <button
-                        onClick={handleReset}
+                        onClick={goBackToForm}
                         className="bg-gray-600 text-white px-6 py-2 rounded-lg hover:bg-gray-700"
                       >
-                        Start Over
+                        Back
                       </button>
                       <button
                         onClick={() => {
@@ -2575,7 +2584,7 @@ const SalonDinners = () => {
 
                     <div className="flex space-x-3">
                       <button
-                        onClick={handleReset() => setStep('form')}
+                        onClick={goBackToForm}
                         className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
                       >
                         Back
