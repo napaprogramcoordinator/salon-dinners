@@ -814,7 +814,8 @@ const SalonDinners = () => {
       setCurrentPage('admin');
       setAdminPassword('');
       setShowAdminLogin(false);
-    } else {
+      setShowAlert(null);
+  } else {
       setShowAlert({ message: 'Incorrect password', type: 'error' });
       setAdminPassword('');
     }
@@ -1088,7 +1089,8 @@ const SalonDinners = () => {
                   onClick={() => {
                     setShowAdminLogin(false);
                     setAdminPassword('');
-                  }}
+                    setShowAlert(null);
+                }}
                   className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
                 >
                   Cancel
@@ -1196,55 +1198,6 @@ const SalonDinners = () => {
                   <div className="bg-orange-50 p-4 rounded-lg">
                     <div className="text-2xl font-bold text-orange-700">{waitlistData.length}</div>
                     <div className="text-sm text-gray-600">Waitlist</div>
-                  </div>
-                </div>
-
-                <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-6">
-                  <h4 className="text-sm font-semibold text-red-800 mb-3 flex items-center">
-                    <AlertCircle className="w-4 h-4 mr-2" />
-                    Storage Usage (Claude Artifact Limit)
-                  </h4>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-700">Registrations:</span>
-                      <span className="font-mono text-gray-900">
-                        {(new Blob([JSON.stringify(registrations)]).size / 1024).toFixed(2)} KB
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-700">Waitlist:</span>
-                      <span className="font-mono text-gray-900">
-                        {(new Blob([JSON.stringify(waitlistData)]).size / 1024).toFixed(2)} KB
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm font-bold pt-2 border-t-2 border-red-300">
-                      <span className="text-red-800">Total Used:</span>
-                      <span className="font-mono text-red-900">
-                        {((new Blob([JSON.stringify(registrations)]).size + new Blob([JSON.stringify(waitlistData)]).size) / 1024).toFixed(2)} KB / 5,000 KB
-                      </span>
-                    </div>
-                    <div className="mt-3">
-                      <div className="bg-gray-200 rounded-full h-4 overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all ${
-                            ((new Blob([JSON.stringify(registrations)]).size + new Blob([JSON.stringify(waitlistData)]).size) / 1024) > 4500 
-                              ? 'bg-red-600' 
-                              : 'bg-green-600'
-                          }`}
-                          style={{ 
-                            width: `${Math.min(100, ((new Blob([JSON.stringify(registrations)]).size + new Blob([JSON.stringify(waitlistData)]).size) / 1024 / 5000) * 100)}%` 
-                          }}
-                        ></div>
-                      </div>
-                      <p className="text-xs text-red-700 mt-1 font-medium">
-                        {((((new Blob([JSON.stringify(registrations)]).size + new Blob([JSON.stringify(waitlistData)]).size) / 1024) / 5000) * 100).toFixed(1)}% of Claude storage limit
-                      </p>
-                      {((new Blob([JSON.stringify(registrations)]).size + new Blob([JSON.stringify(waitlistData)]).size) / 1024) > 4500 && (
-                        <p className="text-xs text-red-600 mt-2 font-semibold">
-                          ⚠️ Warning: Near storage limit. New photos may be removed. Consider moving to Vercel for unlimited storage.
-                        </p>
-                      )}
-                    </div>
                   </div>
                 </div>
 
