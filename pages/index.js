@@ -39,6 +39,7 @@ const SalonDinners = () => {
   const [preferredDates, setPreferredDates] = useState([]);
   const [waitlistData, setWaitlistData] = useState([]);
   const [movingFromWaitlist, setMovingFromWaitlist] = useState(null);
+  const [showCancelOptions, setShowCancelOptions] = useState(null);
 
   const ADMIN_PASSWORD = 'salon2026';
 
@@ -157,6 +158,130 @@ const SalonDinners = () => {
       setShowAlert({ message: `Error moving person: ${error.message}`, type: 'error' });
     }
   };
+
+  const handleCancelToWaitlist = async (person) => {
+    try {
+      // Remove from registrations
+      const updatedRegistrations = { ...registrations };
+      const groupArray = updatedRegistrations[person.dateId][person.group];
+      const index = groupArray.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      if (index > -1) {
+        groupArray.splice(index, 1);
+      }
+      
+      // Add to waitlist
+      const waitlistEntry = {
+        name: person.name,
+        email: person.email,
+        phone: person.phone,
+        professionalTitle: person.professionalTitle,
+        bio: person.bio,
+        foodAllergies: person.foodAllergies,
+        picture: person.picture,
+        classification: person.group,
+        preferredDates: [person.dateId],
+        timestamp: new Date().toISOString()
+      };
+      
+      const updatedWaitlist = [...waitlistData, waitlistEntry];
+      
+      // Save both
+      await window.storage.set('salon-registrations', JSON.stringify(updatedRegistrations));
+      await window.storage.set('waitlist', JSON.stringify(updatedWaitlist));
+      
+      setRegistrations(updatedRegistrations);
+      setWaitlistData(updatedWaitlist);
+      
+      // Send to webhook
+      if (n8nWebhookUrl) {
+        try {
+          await fetch(n8nWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'waitlist',
+              data: [waitlistEntry],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Webhook error:', error);
+        }
+      }
+      
+      setShowCancelOptions(null);
+      setShowAlert({ message: 'Moved to waitlist successfully!', type: 'success' });
+    } catch (error) {
+      console.error('Error moving to waitlist:', error);
+      setShowAlert({ message: 'Error moving to waitlist', type: 'error' });
+    }
+  };
+
+  const handleCancelToInviteList = async (person) => {
+    try {
+      // Remove from registrations
+      const updatedRegistrations = { ...registrations };
+      const groupArray = updatedRegistrations[person.dateId][person.group];
+      const index = groupArray.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      if (index > -1) {
+        groupArray.splice(index, 1);
+      }
+      await window.storage.set('salon-registrations', JSON.stringify(updatedRegistrations));
+      setRegistrations(updatedRegistrations);
+      
+      // Add to invite list
+      const inviteEntry = {
+        name: person.name,
+        email: person.email,
+        timestamp: new Date().toISOString()
+      };
+      
+      // Send to webhook
+      if (n8nWebhookUrl) {
+        try {
+          await fetch(n8nWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'invite',
+              data: [inviteEntry],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Webhook error:', error);
+        }
+      }
+      
+      setShowCancelOptions(null);
+      setShowAlert({ message: 'Added to invite list for next year!', type: 'success' });
+    } catch (error) {
+      console.error('Error adding to invite list:', error);
+      setShowAlert({ message: 'Error adding to invite list', type: 'error' });
+    }
+  };
+
+  const handleCompleteDelete = async (person) => {
+    try {
+      const updatedRegistrations = { ...registrations };
+      const groupArray = updatedRegistrations[person.dateId][person.group];
+      const index = groupArray.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      if (index > -1) {
+        groupArray.splice(index, 1);
+      }
+      await window.storage.set('salon-registrations', JSON.stringify(updatedRegistrations));
+      setRegistrations(updatedRegistrations);
+      setShowCancelOptions(null);
+      setShowAlert({ message: 'Registration deleted successfully', type: 'success' });
+    } catch (error) {
+      console.error('Error deleting:', error);
+      setShowAlert({ message: 'Error deleting registration', type: 'error' });
+    }
+  };
+
+  const loadRegistrations = async () => {
 
   const loadRegistrations = async () => {
     if (typeof window === 'undefined') {
@@ -1286,18 +1411,14 @@ const SalonDinners = () => {
                               </button>
                               <button
                                 onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  console.log('Delete button clicked!', person);
-                                  const dateRegs = registrations[person.dateId][person.group];
-                                  const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
-                                  console.log('Found index:', index);
-                                  setShowDeleteConfirm({ dateId: person.dateId, group: person.group, index, name: person.name });
-                                }}
-                                className="text-red-600 hover:text-red-700 text-sm"
-                              >
-                                Delete
-                              </button>
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setShowCancelOptions(person);
+                              }}
+                              className="text-red-600 hover:text-red-700 text-sm"
+                            >
+                              Cancel Registration
+                            </button>
                             </div>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-2">
@@ -2313,6 +2434,86 @@ const SalonDinners = () => {
         </div>
       )}
 
+          {/* Cancel Registration Options Modal */}
+                {showCancelOptions && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                      <h3 className="text-xl font-bold text-gray-900 mb-4">
+                        Cancel Registration for {showCancelOptions.name}?
+                      </h3>
+                      <p className="text-gray-600 mb-6">
+                        Choose what to do with this registration:
+                      </p>
+                      
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => handleCancelToWaitlist(showCancelOptions)}
+                          className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 transition text-left"
+                        >
+                          <div className="font-bold">Move to Waitlist</div>
+                          <div className="text-sm text-blue-100">Keep their info for a different date</div>
+                        </button>
+                        
+                        <button
+                          onClick={() => handleCancelToInviteList(showCancelOptions)}
+                          className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-green-700 transition text-left"
+                        >
+                          <div className="font-bold">Add to Invite List</div>
+                          <div className="text-sm text-green-100">Save for next year's event</div>
+                        </button>
+                        
+                        <button
+                          onClick={() => handleCompleteDelete(showCancelOptions)}
+                          className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-700 transition text-left"
+                        >
+                          <div className="font-bold">Delete Completely</div>
+                          <div className="text-sm text-red-100">Remove from system entirely</div>
+                        </button>
+                        
+                        <button
+                          onClick={() => setShowCancelOptions(null)}
+                          className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition"
+                        >
+                          Never Mind
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+          ```
+          
+          8. Make sure there's a **blank line** after the closing `)}` and before the `{/* Move from Waitlist Modal */}` comment
+          
+          ---
+          
+          ## **What This Modal Does:**
+          
+          When someone clicks "Cancel Registration" (from Step 3), this modal pops up showing 4 buttons:
+          ```
+          ┌──────────────────────────────────────────┐
+          │ Cancel Registration for John Doe?       │
+          │                                          │
+          │ Choose what to do with this registration:│
+          │                                          │
+          │ ┌────────────────────────────────────┐  │
+          │ │ Move to Waitlist                   │  │ ← Blue button
+          │ │ Keep their info for different date │  │
+          │ └────────────────────────────────────┘  │
+          │                                          │
+          │ ┌────────────────────────────────────┐  │
+          │ │ Add to Invite List                 │  │ ← Green button
+          │ │ Save for next year's event         │  │
+          │ └────────────────────────────────────┘  │
+          │                                          │
+          │ ┌────────────────────────────────────┐  │
+          │ │ Delete Completely                  │  │ ← Red button
+          │ │ Remove from system entirely        │  │
+          │ └────────────────────────────────────┘  │
+          │                                          │
+          │ ┌────────────────────────────────────┐  │
+          │ │ Never Mind                         │  │ ← Gray button
+          │ └────────────────────────────────────┘  │
+          └──────────────────────────────────────────┘
       {/* Move from Waitlist Modal */}
       {movingFromWaitlist && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
