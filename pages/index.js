@@ -147,28 +147,36 @@ const SalonDinners = () => {
   };
 
   const loadRegistrations = async () => {
-    try {
-      const result = await window.storage.get('salon-registrations');
-      if (result) {
-        setRegistrations(JSON.parse(result.value));
-      } else {
-        const initialData = {};
-        eventDates.forEach(date => {
-          initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
-        });
-        setRegistrations(initialData);
-        await window.storage.set('salon-registrations', JSON.stringify(initialData));
-      }
-    } catch (error) {
+  if (typeof window === 'undefined') {
+    setLoading(false);
+    return;
+  }
+  try {
+    const result = localStorage.getItem('salon-registrations');
+    if (result) {
+      setRegistrations(JSON.parse(result));
+    } else {
       const initialData = {};
       eventDates.forEach(date => {
         initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
       });
       setRegistrations(initialData);
-      await window.storage.set('salon-registrations', JSON.stringify(initialData));
+      localStorage.setItem('salon-registrations', JSON.stringify(initialData));
     }
-    setLoading(false);
-  };
+  } catch (error) {
+    const initialData = {};
+    eventDates.forEach(date => {
+      initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+    });
+    setRegistrations(initialData);
+    try {
+      localStorage.setItem('salon-registrations', JSON.stringify(initialData));
+    } catch (e) {
+      console.error('Error saving initial data:', e);
+    }
+  }
+  setLoading(false);
+};
 
   const handlePublicationToggle = (pubName) => {
     setFormData(prev => ({
