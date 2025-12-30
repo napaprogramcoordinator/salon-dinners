@@ -39,8 +39,9 @@ const SalonDinners = () => {
   const [preferredDates, setPreferredDates] = useState([]);
   const [waitlistData, setWaitlistData] = useState([]);
   const [movingFromWaitlist, setMovingFromWaitlist] = useState(null);
-  const [showRemoveOptions, setShowRemoveOptions] = useState(null); // NEW: For delete/move modal
-  const [inviteList, setInviteList] = useState([]); // NEW: Track invite list in state
+  const [showRemoveOptions, setShowRemoveOptions] = useState(null);
+  const [inviteList, setInviteList] = useState([]);
+  const [showWaitlistRemoveOptions, setShowWaitlistRemoveOptions] = useState(null);
 
   const ADMIN_PASSWORD = 'salon2026';
 
@@ -76,7 +77,6 @@ const SalonDinners = () => {
     loadRegistrations();
     loadWaitlistData();
     loadInviteList();
-    // Load saved webhook URL
     try {
       const savedWebhook = localStorage.getItem('make-webhook');
       if (savedWebhook) {
@@ -143,23 +143,13 @@ const SalonDinners = () => {
     setLoading(false);
   };
 
-  const deleteFromWaitlist = async (index) => {
-    const updated = [...waitlistData];
-    updated.splice(index, 1);
-    try {
-      localStorage.setItem('waitlist', JSON.stringify(updated));
-    } catch (e) {
-      console.error('Error saving waitlist:', e);
-    }
-    setWaitlistData(updated);
-    setShowDeleteConfirm(null);
-    setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
-  };
+  // ============================================
+  // MOVE & DELETE FUNCTIONS WITH WEBHOOK SYNC
+  // ============================================
 
-  // NEW: Move registrant to waitlist
+  // Move registrant to waitlist (with webhook)
   const moveRegistrantToWaitlist = async (person) => {
     try {
-      // Create waitlist entry from registrant data
       const waitlistEntry = {
         name: person.name,
         email: person.email,
@@ -169,17 +159,15 @@ const SalonDinners = () => {
         foodAllergies: person.foodAllergies,
         picture: person.picture,
         classification: person.group,
-        preferredDates: [person.dateId], // Default to their original date
+        preferredDates: [person.dateId],
         timestamp: new Date().toISOString(),
         movedFromRegistration: true,
         originalDate: person.date,
         originalLocation: person.location
       };
 
-      // Add to waitlist
       const updatedWaitlist = [...waitlistData, waitlistEntry];
       
-      // Remove from registrations
       const updatedRegistrations = { ...registrations };
       const dateRegs = updatedRegistrations[person.dateId][person.group];
       const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
@@ -187,13 +175,36 @@ const SalonDinners = () => {
       if (index !== -1) {
         updatedRegistrations[person.dateId][person.group].splice(index, 1);
         
-        // Save both
         localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
         localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
         
         setWaitlistData(updatedWaitlist);
         setRegistrations(updatedRegistrations);
         setShowRemoveOptions(null);
+
+        // Send webhook to delete from Registrations and add to Waitlist
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                action: 'move_to_waitlist',
+                data: [{
+                  ...waitlistEntry,
+                  originalDateId: person.dateId,
+                  originalGroup: person.group
+                }],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
+        }
+
         setShowAlert({ message: `${person.name} moved to waitlist successfully!`, type: 'success' });
       } else {
         setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
@@ -204,10 +215,9 @@ const SalonDinners = () => {
     }
   };
 
-  // NEW: Move registrant to invite list (next year)
+  // Move registrant to invite list (with webhook)
   const moveRegistrantToInviteList = async (person) => {
     try {
-      // Create invite entry from registrant data
       const inviteEntry = {
         name: person.name,
         email: person.email,
@@ -217,7 +227,6 @@ const SalonDinners = () => {
         originalLocation: person.location
       };
 
-      // Get current invite list and add new entry
       let currentInviteList = [];
       try {
         const stored = localStorage.getItem('invite-list');
@@ -230,7 +239,6 @@ const SalonDinners = () => {
       
       const updatedInviteList = [...currentInviteList, inviteEntry];
       
-      // Remove from registrations
       const updatedRegistrations = { ...registrations };
       const dateRegs = updatedRegistrations[person.dateId][person.group];
       const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
@@ -238,13 +246,36 @@ const SalonDinners = () => {
       if (index !== -1) {
         updatedRegistrations[person.dateId][person.group].splice(index, 1);
         
-        // Save both
         localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
         localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
         
         setInviteList(updatedInviteList);
         setRegistrations(updatedRegistrations);
         setShowRemoveOptions(null);
+
+        // Send webhook to delete from Registrations and add to Invites
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                action: 'move_to_invite',
+                data: [{
+                  ...inviteEntry,
+                  originalDateId: person.dateId,
+                  originalGroup: person.group
+                }],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
+        }
+
         setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
       } else {
         setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
@@ -255,7 +286,7 @@ const SalonDinners = () => {
     }
   };
 
-  // NEW: Delete registrant permanently
+  // Delete registrant permanently (with webhook)
   const deleteRegistrantPermanently = async (person) => {
     try {
       const updatedRegistrations = { ...registrations };
@@ -267,6 +298,32 @@ const SalonDinners = () => {
         localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
         setRegistrations(updatedRegistrations);
         setShowRemoveOptions(null);
+
+        // Send webhook to delete from Registrations
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                action: 'delete',
+                data: [{
+                  email: person.email,
+                  name: person.name,
+                  dateId: person.dateId,
+                  date: person.date,
+                  group: person.group
+                }],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
+        }
+
         setShowAlert({ message: `${person.name} has been permanently deleted.`, type: 'success' });
       } else {
         setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
@@ -277,12 +334,12 @@ const SalonDinners = () => {
     }
   };
 
+  // Move from waitlist to registration (with webhook)
   const moveFromWaitlistToRegistration = async (waitlistIndex, dateId, group) => {
     const person = waitlistData[waitlistIndex];
     
-    // Add to registrations
     const updatedRegistrations = { ...registrations };
-    updatedRegistrations[dateId][group].push({
+    const newRegistrant = {
       name: person.name,
       email: person.email,
       phone: person.phone,
@@ -292,13 +349,13 @@ const SalonDinners = () => {
       picture: person.picture,
       timestamp: new Date().toISOString(),
       movedFromWaitlist: true
-    });
+    };
     
-    // Remove from waitlist
+    updatedRegistrations[dateId][group].push(newRegistrant);
+    
     const updatedWaitlist = [...waitlistData];
     updatedWaitlist.splice(waitlistIndex, 1);
     
-    // Save both
     try {
       const regString = JSON.stringify(updatedRegistrations);
       const regSizeKB = new Blob([regString]).size / 1024;
@@ -317,6 +374,34 @@ const SalonDinners = () => {
       setRegistrations(updatedRegistrations);
       setWaitlistData(updatedWaitlist);
       setMovingFromWaitlist(null);
+
+      // Send webhook to delete from Waitlist and add to Registrations
+      if (makeWebhookUrl) {
+        try {
+          const dateInfo = eventDates.find(d => d.id === dateId);
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'waitlist',
+              action: 'move_to_registrant',
+              data: [{
+                ...newRegistrant,
+                dateId: dateId,
+                date: dateInfo?.label,
+                location: dateInfo?.location,
+                group: group,
+                originalEmail: person.email
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
+        }
+      }
+
       setShowAlert({ message: `${person.name} moved to registration successfully!`, type: 'success' });
     } catch (error) {
       console.error('Error moving from waitlist:', error);
@@ -324,7 +409,110 @@ const SalonDinners = () => {
     }
   };
 
-  // Keep old deleteRegistrant for backwards compatibility but it now just opens the options modal
+  // Delete from waitlist (with webhook)
+  const deleteFromWaitlist = async (index) => {
+    const person = waitlistData[index];
+    const updated = [...waitlistData];
+    updated.splice(index, 1);
+    
+    try {
+      localStorage.setItem('waitlist', JSON.stringify(updated));
+      setWaitlistData(updated);
+      setShowDeleteConfirm(null);
+      setShowWaitlistRemoveOptions(null);
+
+      // Send webhook to delete from Waitlist
+      if (makeWebhookUrl) {
+        try {
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'waitlist',
+              action: 'delete',
+              data: [{
+                email: person.email,
+                name: person.name
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
+        }
+      }
+
+      setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
+    } catch (e) {
+      console.error('Error saving waitlist:', e);
+      setShowAlert({ message: `Error: ${e.message}`, type: 'error' });
+    }
+  };
+
+  // Move waitlist person to invite list (with webhook)
+  const moveWaitlistToInviteList = async (index) => {
+    const person = waitlistData[index];
+    
+    try {
+      const inviteEntry = {
+        name: person.name,
+        email: person.email,
+        timestamp: new Date().toISOString(),
+        movedFromWaitlist: true
+      };
+
+      let currentInviteList = [];
+      try {
+        const stored = localStorage.getItem('invite-list');
+        if (stored) {
+          currentInviteList = JSON.parse(stored);
+        }
+      } catch (e) {
+        currentInviteList = [];
+      }
+      
+      const updatedInviteList = [...currentInviteList, inviteEntry];
+      const updatedWaitlist = [...waitlistData];
+      updatedWaitlist.splice(index, 1);
+      
+      localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
+      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+      
+      setInviteList(updatedInviteList);
+      setWaitlistData(updatedWaitlist);
+      setShowWaitlistRemoveOptions(null);
+
+      // Send webhook to delete from Waitlist and add to Invites
+      if (makeWebhookUrl) {
+        try {
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'waitlist',
+              action: 'move_to_invite',
+              data: [{
+                ...inviteEntry,
+                originalEmail: person.email
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
+        }
+      }
+
+      setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
+    } catch (error) {
+      console.error('Error moving to invite list:', error);
+      setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
+    }
+  };
+
+  // Legacy function - now opens options modal
   const deleteRegistrant = async (dateId, group, index) => {
     console.log('deleteRegistrant called - opening options modal');
     const person = registrations[dateId][group][index];
@@ -339,6 +527,10 @@ const SalonDinners = () => {
     }
     setShowDeleteConfirm(null);
   };
+
+  // ============================================
+  // FORM HANDLING & HELPER FUNCTIONS
+  // ============================================
 
   const handlePublicationToggle = (pubName) => {
     setFormData(prev => ({
@@ -528,6 +720,10 @@ const SalonDinners = () => {
     return filtered;
   };
 
+  // ============================================
+  // REGISTRATION HANDLER (with action: "new")
+  // ============================================
+
   const handleRegister = async () => {
     console.log('handleRegister called');
     console.log('isWaitlist:', isWaitlist);
@@ -595,6 +791,7 @@ const SalonDinners = () => {
         
         setWaitlistData(waitlist);
         
+        // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
             await fetch(makeWebhookUrl, {
@@ -602,6 +799,7 @@ const SalonDinners = () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 type: 'waitlist',
+                action: 'new',
                 data: [waitlistEntry],
                 exportDate: new Date().toISOString(),
                 totalCount: 1
@@ -656,6 +854,7 @@ const SalonDinners = () => {
         setRegistrations(updatedRegistrations);
         console.log('Regular registration successful');
         
+        // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
             const date = eventDates.find(d => d.id === selectedDate);
@@ -671,6 +870,7 @@ const SalonDinners = () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 type: 'registrants',
+                action: 'new',
                 data: [registrantData],
                 exportDate: new Date().toISOString(),
                 totalCount: 1
@@ -689,6 +889,10 @@ const SalonDinners = () => {
       }
     }
   };
+
+  // ============================================
+  // EXPORT FUNCTIONS
+  // ============================================
 
   const exportToCSV = () => {
     const registrants = getAllRegistrants();
@@ -770,6 +974,7 @@ const SalonDinners = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'registrants',
+          action: 'bulk_export',
           data: allData,
           exportDate: new Date().toISOString(),
           totalCount: allData.length
@@ -796,6 +1001,7 @@ const SalonDinners = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'waitlist',
+          action: 'bulk_export',
           data: waitlistData,
           exportDate: new Date().toISOString(),
           totalCount: waitlistData.length
@@ -810,6 +1016,10 @@ const SalonDinners = () => {
       setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
     }
   };
+
+  // ============================================
+  // EDIT FUNCTIONS & ADMIN HANDLERS
+  // ============================================
 
   const startEditRegistrant = (person) => {
     console.log('Starting edit for:', person);
@@ -972,6 +1182,7 @@ const SalonDinners = () => {
       localStorage.setItem('invite-list', JSON.stringify(inviteListData));
       setInviteList(inviteListData);
       
+      // Send to webhook with action: "new"
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -979,6 +1190,7 @@ const SalonDinners = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               type: 'invite',
+              action: 'new',
               data: [inviteData],
               exportDate: new Date().toISOString(),
               totalCount: 1
@@ -997,6 +1209,11 @@ const SalonDinners = () => {
     }
   };
 
+  // ============================================
+  // MODAL COMPONENTS
+  // ============================================
+
+  // Edit Modal Component
   const EditModal = () => {
     if (!editingRegistrant) return null;
 
@@ -1008,10 +1225,7 @@ const SalonDinners = () => {
         <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Edit Registration</h2>
-            <button
-              onClick={cancelEdit}
-              className="text-gray-500 hover:text-gray-700"
-            >
+            <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -1155,7 +1369,7 @@ const SalonDinners = () => {
     );
   };
 
-  // NEW: Remove Options Modal Component
+  // Remove Options Modal for Registrants
   const RemoveOptionsModal = () => {
     if (!showRemoveOptions) return null;
 
@@ -1170,7 +1384,6 @@ const SalonDinners = () => {
           </p>
           
           <div className="space-y-3">
-            {/* Move to Waitlist Option */}
             <button 
               onClick={() => moveRegistrantToWaitlist(person)}
               className="w-full flex items-center p-4 border-2 border-orange-200 bg-orange-50 rounded-lg hover:border-orange-400 transition-colors text-left"
@@ -1184,7 +1397,6 @@ const SalonDinners = () => {
               </div>
             </button>
 
-            {/* Move to Invite List Option */}
             <button 
               onClick={() => moveRegistrantToInviteList(person)}
               className="w-full flex items-center p-4 border-2 border-blue-200 bg-blue-50 rounded-lg hover:border-blue-400 transition-colors text-left"
@@ -1198,7 +1410,6 @@ const SalonDinners = () => {
               </div>
             </button>
 
-            {/* Delete Permanently Option */}
             <button 
               onClick={() => deleteRegistrantPermanently(person)}
               className="w-full flex items-center p-4 border-2 border-red-200 bg-red-50 rounded-lg hover:border-red-400 transition-colors text-left"
@@ -1213,7 +1424,6 @@ const SalonDinners = () => {
             </button>
           </div>
 
-          {/* Cancel Button */}
           <button 
             onClick={() => setShowRemoveOptions(null)}
             className="w-full mt-4 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
@@ -1224,6 +1434,79 @@ const SalonDinners = () => {
       </div>
     );
   };
+
+  // Remove Options Modal for Waitlist
+  const WaitlistRemoveOptionsModal = () => {
+    if (!showWaitlistRemoveOptions) return null;
+
+    const { person, index } = showWaitlistRemoveOptions;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+          <h3 className="text-xl font-bold text-gray-800 mb-2">Remove from Waitlist</h3>
+          <p className="text-gray-600 mb-6">
+            What would you like to do with <strong>{person.name}</strong>?
+          </p>
+          
+          <div className="space-y-3">
+            <button 
+              onClick={() => {
+                setShowWaitlistRemoveOptions(null);
+                setMovingFromWaitlist({ person, index });
+              }}
+              className="w-full flex items-center p-4 border-2 border-green-200 bg-green-50 rounded-lg hover:border-green-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                <CheckCircle className="w-5 h-5 text-green-600" />
+              </div>
+              <div>
+                <div className="font-semibold text-gray-800">Move to Registration</div>
+                <div className="text-sm text-gray-600">Confirm their spot at an event</div>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => moveWaitlistToInviteList(index)}
+              className="w-full flex items-center p-4 border-2 border-blue-200 bg-blue-50 rounded-lg hover:border-blue-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                <Mail className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <div className="font-semibold text-gray-800">Move to Invite List</div>
+                <div className="text-sm text-gray-600">Add to next year's invitation list</div>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => deleteFromWaitlist(index)}
+              className="w-full flex items-center p-4 border-2 border-red-200 bg-red-50 rounded-lg hover:border-red-400 transition-colors text-left"
+            >
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <div className="font-semibold text-red-700">Delete Permanently</div>
+                <div className="text-sm text-red-600">Remove completely (cannot be undone)</div>
+              </div>
+            </button>
+          </div>
+
+          <button 
+            onClick={() => setShowWaitlistRemoveOptions(null)}
+            className="w-full mt-4 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================
+  // LOADING & ADMIN LOGIN SCREENS
+  // ============================================
 
   if (loading) {
     return (
@@ -1258,9 +1541,7 @@ const SalonDinners = () => {
             <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Admin Login</h2>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Password
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
                 <input
                   type="password"
                   value={adminPassword}
@@ -1277,7 +1558,7 @@ const SalonDinners = () => {
                     setShowAdminLogin(false);
                     setAdminPassword('');
                     setShowAlert(null);
-                }}
+                  }}
                   className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
                 >
                   Cancel
@@ -1295,6 +1576,10 @@ const SalonDinners = () => {
       </div>
     );
   }
+
+  // ============================================
+  // ADMIN DASHBOARD
+  // ============================================
 
   if (currentPage === 'admin' && isAdminAuthenticated) {
     return (
@@ -1463,7 +1748,6 @@ const SalonDinners = () => {
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  console.log('Edit button clicked!', person);
                                   startEditRegistrant(person);
                                 }}
                                 className="text-blue-600 hover:text-blue-700 text-sm flex items-center"
@@ -1471,12 +1755,10 @@ const SalonDinners = () => {
                                 <Edit className="w-4 h-4 mr-1" />
                                 Edit
                               </button>
-                              {/* UPDATED: Now opens the Remove Options modal */}
                               <button
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  console.log('Remove button clicked!', person);
                                   setShowRemoveOptions(person);
                                 }}
                                 className="text-red-600 hover:text-red-700 text-sm flex items-center"
@@ -1553,7 +1835,7 @@ const SalonDinners = () => {
                 <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
                   <h5 className="font-semibold text-gray-800 mb-2">Make.com Webhook URL</h5>
                   <p className="text-sm text-gray-600 mb-3">
-                    All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen.
+                    All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen. Moves and deletions will also sync automatically.
                   </p>
                   <input
                     type="text"
@@ -1572,11 +1854,15 @@ const SalonDinners = () => {
                     Save Webhook URL
                   </button>
                   <div className="bg-blue-100 rounded p-3 mb-3">
-                    <p className="text-xs text-blue-800 font-medium mb-2">✨ Auto-Send Enabled:</p>
+                    <p className="text-xs text-blue-800 font-medium mb-2">✨ Auto-Sync Enabled:</p>
                     <ul className="text-xs text-blue-700 space-y-1">
-                      <li>• New registrations → sent immediately with <code>type: "registrants"</code></li>
-                      <li>• Waitlist additions → sent immediately with <code>type: "waitlist"</code></li>
-                      <li>• Invite requests → sent immediately with <code>type: "invite"</code></li>
+                      <li>• New registrations → <code>type: "registrants", action: "new"</code></li>
+                      <li>• New waitlist signups → <code>type: "waitlist", action: "new"</code></li>
+                      <li>• Invite requests → <code>type: "invite", action: "new"</code></li>
+                      <li>• Move to waitlist → <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>• Move to invite → <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>• Move to registrant → <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>• Delete → <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -1606,24 +1892,21 @@ const SalonDinners = () => {
                 <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                   <h5 className="font-semibold text-gray-800 mb-2">Make.com Setup Guide</h5>
                   <p className="text-sm text-gray-700 mb-3">
-                    Your Make.com scenario will receive all three types through one webhook:
+                    Your Make.com scenario needs to handle different action types:
                   </p>
                   <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside mb-4">
-                    <li>Create a new scenario in Make.com with <strong>Webhooks → Custom webhook</strong> trigger</li>
-                    <li>Add a <strong>Router</strong> module to split by data type</li>
-                    <li>Create 3 routes with filters checking <code>type</code>:
+                    <li>Create a <strong>Webhooks → Custom webhook</strong> trigger</li>
+                    <li>Add a <strong>Router</strong> module</li>
+                    <li>Create routes for each action type:
                       <ul className="ml-6 mt-1 space-y-1 text-xs list-disc">
-                        <li><code>registrants</code> → Google Sheets (Add a Row to Registrants sheet)</li>
-                        <li><code>waitlist</code> → Google Sheets (Add a Row to Waitlist sheet)</li>
-                        <li><code>invite</code> → Google Sheets (Add a Row to Invites sheet)</li>
+                        <li><code>action = "new"</code> → Add Row to appropriate sheet</li>
+                        <li><code>action = "move_to_*"</code> → Search & Delete from source, Add to destination</li>
+                        <li><code>action = "delete"</code> → Search & Delete from sheet</li>
                       </ul>
                     </li>
-                    <li>In each Google Sheets module, map fields from the <code>data</code> array</li>
-                    <li>Turn on the scenario and paste the webhook URL above</li>
+                    <li>Use <strong>Google Sheets "Search Rows"</strong> to find by email</li>
+                    <li>Use <strong>Google Sheets "Delete Row"</strong> to remove found rows</li>
                   </ol>
-                  <p className="text-xs text-gray-600">
-                    💡 <strong>Tip:</strong> Use the "Export All" buttons above to send existing data, then new submissions will flow automatically.
-                  </p>
                 </div>
               </div>
             )}
@@ -1653,24 +1936,13 @@ const SalonDinners = () => {
                                   <p className="text-sm text-gray-600">{person.professionalTitle}</p>
                                 )}
                               </div>
-                              <div className="flex space-x-2">
-                                <button
-                                  onClick={() => setMovingFromWaitlist({ person, index: idx })}
-                                  className="text-green-600 hover:text-green-700 text-sm font-medium"
-                                >
-                                  Move to Registration
-                                </button>
-                                <button
-                                  onClick={() => setShowDeleteConfirm({ 
-                                    name: person.name, 
-                                    action: () => deleteFromWaitlist(idx),
-                                    message: 'Are you sure you want to remove this person from the waitlist?'
-                                  })}
-                                  className="text-red-600 hover:text-red-700 text-sm"
-                                >
-                                  Remove
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => setShowWaitlistRemoveOptions({ person, index: idx })}
+                                className="text-red-600 hover:text-red-700 text-sm flex items-center"
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Remove
+                              </button>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-2">
                               <div><span className="font-medium">Email:</span> {person.email}</div>
@@ -1710,41 +1982,10 @@ const SalonDinners = () => {
           </div>
         </div>
 
-        {/* Edit Modal */}
+        {/* Modals */}
         <EditModal />
-
-        {/* NEW: Remove Options Modal */}
         <RemoveOptionsModal />
-
-        {/* Delete Confirmation Modal */}
-        {showDeleteConfirm && (
-          <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 99999 }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', maxWidth: '28rem', width: '100%', padding: '1.5rem' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1rem' }}>Confirm Delete</h3>
-              <p style={{ color: '#4b5563', marginBottom: '1.5rem' }}>
-                {showDeleteConfirm.message || `Are you sure you want to delete the registration for ${showDeleteConfirm.name}? This action cannot be undone.`}
-              </p>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  style={{ flex: 1, backgroundColor: '#e5e7eb', color: '#374151', padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-                  onMouseOver={(e) => e.target.style.backgroundColor = '#d1d5db'}
-                  onMouseOut={(e) => e.target.style.backgroundColor = '#e5e7eb'}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => showDeleteConfirm.action ? showDeleteConfirm.action() : deleteRegistrant(showDeleteConfirm.dateId, showDeleteConfirm.group, showDeleteConfirm.index)}
-                  style={{ flex: 1, backgroundColor: '#dc2626', color: 'white', padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-                  onMouseOver={(e) => e.target.style.backgroundColor = '#b91c1c'}
-                  onMouseOut={(e) => e.target.style.backgroundColor = '#dc2626'}
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <WaitlistRemoveOptionsModal />
 
         {/* Alert Modal */}
         {showAlert && (
@@ -1762,8 +2003,6 @@ const SalonDinners = () => {
               <button
                 onClick={() => setShowAlert(null)}
                 style={{ width: '100%', backgroundColor: '#2563eb', color: 'white', padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-                onMouseOver={(e) => e.target.style.backgroundColor = '#1d4ed8'}
-                onMouseOut={(e) => e.target.style.backgroundColor = '#2563eb'}
               >
                 OK
               </button>
@@ -1774,62 +2013,66 @@ const SalonDinners = () => {
         {/* Move from Waitlist Modal */}
         {movingFromWaitlist && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6">
-              <h3 className="text-xl font-bold text-gray-800 mb-4">
-                Move {movingFromWaitlist.person.name} to Registration
-              </h3>
-              <p className="text-gray-600 mb-4">Select the date and group to move this person to:</p>
-              
-              <div className="space-y-3 max-h-96 overflow-y-auto mb-6">
-                {eventDates.map((date) => {
-                  const dateRegs = registrations[date.id];
-                  const groups = ['liberal', 'moderate', 'conservative'];
-                  
-                  return (
-                    <div key={date.id} className="border border-gray-200 rounded-lg p-3">
-                      <div className="font-semibold text-gray-800 mb-2 flex items-center">
-                        <Calendar className="w-4 h-4 mr-2" />
-                        {date.label} - {date.location}
-                      </div>
-                      <div className="grid grid-cols-3 gap-2 ml-6">
-                        {groups.map(group => {
-                          const count = dateRegs[group].length;
-                          const isFull = count >= 5;
-                          return (
-                            <button
-                              key={group}
-                              onClick={() => moveFromWaitlistToRegistration(movingFromWaitlist.index, date.id, group)}
-                              disabled={isFull}
-                              className={`px-3 py-2 rounded text-sm font-medium ${
-                                isFull
-                                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                  : 'bg-green-100 text-green-700 hover:bg-green-200'
-                              }`}
-                            >
-                              {group.charAt(0).toUpperCase() + group.slice(1)}
-                              <br />
-                              <span className="text-xs">({count}/5)</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">
+              Move {movingFromWaitlist.person.name} to Registration
+            </h3>
+            <p className="text-gray-600 mb-4">Select the date and group to move this person to:</p>
+            
+            <div className="space-y-3 max-h-96 overflow-y-auto mb-6">
+              {eventDates.map((date) => {
+                const dateRegs = registrations[date.id];
+                const groups = ['liberal', 'moderate', 'conservative'];
+                
+                return (
+                  <div key={date.id} className="border border-gray-200 rounded-lg p-3">
+                    <div className="font-semibold text-gray-800 mb-2 flex items-center">
+                      <Calendar className="w-4 h-4 mr-2" />
+                      {date.label} - {date.location}
                     </div>
-                  );
-                })}
-              </div>
-              
-              <button
-                onClick={() => setMovingFromWaitlist(null)}
-                className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300"
-              >
-                Cancel
-              </button>
+                    <div className="grid grid-cols-3 gap-2 ml-6">
+                      {groups.map(group => {
+                        const count = dateRegs[group].length;
+                        const isFull = count >= 5;
+                        return (
+                          <button
+                            key={group}
+                            onClick={() => moveFromWaitlistToRegistration(movingFromWaitlist.index, date.id, group)}
+                            disabled={isFull}
+                            className={`px-3 py-2 rounded text-sm font-medium ${
+                              isFull
+                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            }`}
+                          >
+                            {group.charAt(0).toUpperCase() + group.slice(1)}
+                            <br />
+                            <span className="text-xs">({count}/5)</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+            
+            <button
+              onClick={() => setMovingFromWaitlist(null)}
+              className="w-full bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300"
+            >
+              Cancel
+            </button>
           </div>
+        </div>
         )}
       </div>
     );
   }
+
+  // ============================================
+  // PUBLIC VIEW
+  // ============================================
 
   return (
     <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
@@ -2269,7 +2512,6 @@ const SalonDinners = () => {
                           </label>
                         ))}
                         
-                        {/* Waitlist Option */}
                         <div
                           className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
                             isWaitlist
@@ -2342,7 +2584,6 @@ const SalonDinners = () => {
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          console.log('Button clicked!');
                           handleRegister();
                         }}
                         className={`flex-1 py-3 rounded-lg font-semibold transition-colors ${
@@ -2426,41 +2667,10 @@ const SalonDinners = () => {
         </div>
       </div>
 
-      {/* Edit Modal */}
+      {/* Modals */}
       <EditModal />
-
-      {/* NEW: Remove Options Modal */}
       <RemoveOptionsModal />
-
-      {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem', zIndex: 99999 }}>
-          <div style={{ backgroundColor: 'white', borderRadius: '0.5rem', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', maxWidth: '28rem', width: '100%', padding: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1rem' }}>Confirm Delete</h3>
-            <p style={{ color: '#4b5563', marginBottom: '1.5rem' }}>
-              Are you sure you want to delete the registration for <strong>{showDeleteConfirm.name}</strong>? This action cannot be undone.
-            </p>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
-              <button
-                onClick={() => setShowDeleteConfirm(null)}
-                style={{ flex: 1, backgroundColor: '#e5e7eb', color: '#374151', padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-                onMouseOver={(e) => e.target.style.backgroundColor = '#d1d5db'}
-                onMouseOut={(e) => e.target.style.backgroundColor = '#e5e7eb'}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => deleteRegistrant(showDeleteConfirm.dateId, showDeleteConfirm.group, showDeleteConfirm.index)}
-                style={{ flex: 1, backgroundColor: '#dc2626', color: 'white', padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-                onMouseOver={(e) => e.target.style.backgroundColor = '#b91c1c'}
-                onMouseOut={(e) => e.target.style.backgroundColor = '#dc2626'}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <WaitlistRemoveOptionsModal />
 
       {/* Alert Modal */}
       {showAlert && (
@@ -2478,8 +2688,6 @@ const SalonDinners = () => {
             <button
               onClick={() => setShowAlert(null)}
               style={{ width: '100%', backgroundColor: '#2563eb', color: 'white', padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 600, border: 'none', cursor: 'pointer' }}
-              onMouseOver={(e) => e.target.style.backgroundColor = '#1d4ed8'}
-              onMouseOut={(e) => e.target.style.backgroundColor = '#2563eb'}
             >
               OK
             </button>
