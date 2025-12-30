@@ -27,7 +27,7 @@ const SalonDinners = () => {
   const [adminView, setAdminView] = useState('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState('all');
-  const [n8nWebhookUrl, setN8nWebhookUrl] = useState('');
+  const [makeWebhookUrl, setMakeWebhookUrl] = useState('');
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
@@ -44,7 +44,9 @@ const SalonDinners = () => {
 
   // Scroll to top whenever step changes
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }, [step]);
 
   const publications = [
@@ -68,20 +70,26 @@ const SalonDinners = () => {
   ];
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     loadRegistrations();
     loadWaitlistData();
     // Load saved webhook URL
-    const savedWebhook = localStorage.getItem('n8n-webhook');
-    if (savedWebhook) {
-      setN8nWebhookUrl(savedWebhook);
+    try {
+      const savedWebhook = localStorage.getItem('make-webhook');
+      if (savedWebhook) {
+        setMakeWebhookUrl(savedWebhook);
+      }
+    } catch (e) {
+      console.error('Error loading webhook URL:', e);
     }
   }, []);
 
   const loadWaitlistData = async () => {
+    if (typeof window === 'undefined') return;
     try {
-      const result = await window.storage.get('waitlist');
+      const result = localStorage.getItem('waitlist');
       if (result) {
-        setWaitlistData(JSON.parse(result.value));
+        setWaitlistData(JSON.parse(result));
       }
     } catch (error) {
       console.error('Error loading waitlist:', error);
@@ -91,7 +99,11 @@ const SalonDinners = () => {
   const deleteFromWaitlist = async (index) => {
     const updated = [...waitlistData];
     updated.splice(index, 1);
-    await window.storage.set('waitlist', JSON.stringify(updated));
+    try {
+      localStorage.setItem('waitlist', JSON.stringify(updated));
+    } catch (e) {
+      console.error('Error saving waitlist:', e);
+    }
     setWaitlistData(updated);
     setShowDeleteConfirm(null);
     setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
@@ -133,8 +145,8 @@ const SalonDinners = () => {
         lastAdded.pictureNote = 'Picture removed due to storage limit';
       }
       
-      await window.storage.set('salon-registrations', JSON.stringify(updatedRegistrations));
-      await window.storage.set('waitlist', JSON.stringify(updatedWaitlist));
+      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
       
       setRegistrations(updatedRegistrations);
       setWaitlistData(updatedWaitlist);
@@ -147,36 +159,36 @@ const SalonDinners = () => {
   };
 
   const loadRegistrations = async () => {
-  if (typeof window === 'undefined') {
-    setLoading(false);
-    return;
-  }
-  try {
-    const result = localStorage.getItem('salon-registrations');
-    if (result) {
-      setRegistrations(JSON.parse(result));
-    } else {
+    if (typeof window === 'undefined') {
+      setLoading(false);
+      return;
+    }
+    try {
+      const result = localStorage.getItem('salon-registrations');
+      if (result) {
+        setRegistrations(JSON.parse(result));
+      } else {
+        const initialData = {};
+        eventDates.forEach(date => {
+          initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+        });
+        setRegistrations(initialData);
+        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
+      }
+    } catch (error) {
       const initialData = {};
       eventDates.forEach(date => {
         initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
       });
       setRegistrations(initialData);
-      localStorage.setItem('salon-registrations', JSON.stringify(initialData));
+      try {
+        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
+      } catch (e) {
+        console.error('Error saving initial data:', e);
+      }
     }
-  } catch (error) {
-    const initialData = {};
-    eventDates.forEach(date => {
-      initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
-    });
-    setRegistrations(initialData);
-    try {
-      localStorage.setItem('salon-registrations', JSON.stringify(initialData));
-    } catch (e) {
-      console.error('Error saving initial data:', e);
-    }
-  }
-  setLoading(false);
-};
+    setLoading(false);
+  };
 
   const handlePublicationToggle = (pubName) => {
     setFormData(prev => ({
@@ -362,9 +374,9 @@ const SalonDinners = () => {
       try {
         let waitlist = [];
         try {
-          const result = await window.storage.get('waitlist');
-          if (result && result.value) {
-            waitlist = JSON.parse(result.value);
+          const result = localStorage.getItem('waitlist');
+          if (result) {
+            waitlist = JSON.parse(result);
           }
         } catch (getError) {
           console.log('Waitlist does not exist yet, creating new one');
@@ -384,18 +396,18 @@ const SalonDinners = () => {
           waitlist[waitlist.length - 1].picture = null;
           waitlist[waitlist.length - 1].pictureNote = 'Picture removed due to storage limit';
           const reducedWaitlistString = JSON.stringify(waitlist);
-          await window.storage.set('waitlist', reducedWaitlistString);
+          localStorage.setItem('waitlist', reducedWaitlistString);
           setShowAlert({ message: 'Added to waitlist! Note: Picture could not be saved due to storage limits.', type: 'success' });
         } else {
-          await window.storage.set('waitlist', waitlistString);
+          localStorage.setItem('waitlist', waitlistString);
         }
         
         setWaitlistData(waitlist); // Update state immediately
         
-        // Auto-send to N8N webhook if configured
-        if (n8nWebhookUrl) {
+        // Auto-send to Make.com webhook if configured
+        if (makeWebhookUrl) {
           try {
-            await fetch(n8nWebhookUrl, {
+            await fetch(makeWebhookUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -406,7 +418,7 @@ const SalonDinners = () => {
               })
             });
           } catch (error) {
-            console.error('N8N webhook error:', error);
+            console.error('Make.com webhook error:', error);
           }
         }
         
@@ -449,17 +461,17 @@ const SalonDinners = () => {
           lastRegistrant.picture = null;
           lastRegistrant.pictureNote = 'Picture removed due to storage limit';
           const reducedDataString = JSON.stringify(updatedRegistrations);
-          await window.storage.set('salon-registrations', reducedDataString);
+          localStorage.setItem('salon-registrations', reducedDataString);
           setShowAlert({ message: 'Registration successful! Note: Picture could not be saved due to storage limits.', type: 'success' });
         } else {
-          await window.storage.set('salon-registrations', dataString);
+          localStorage.setItem('salon-registrations', dataString);
         }
         
         setRegistrations(updatedRegistrations);
         console.log('Regular registration successful');
         
-        // Auto-send to N8N webhook if configured
-        if (n8nWebhookUrl) {
+        // Auto-send to Make.com webhook if configured
+        if (makeWebhookUrl) {
           try {
             const date = eventDates.find(d => d.id === selectedDate);
             const registrantData = {
@@ -469,7 +481,7 @@ const SalonDinners = () => {
               dateId: selectedDate,
               group: classification
             };
-            await fetch(n8nWebhookUrl, {
+            await fetch(makeWebhookUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -480,7 +492,7 @@ const SalonDinners = () => {
               })
             });
           } catch (error) {
-            console.error('N8N webhook error:', error);
+            console.error('Make.com webhook error:', error);
           }
         }
         
@@ -608,14 +620,14 @@ const SalonDinners = () => {
     a.click();
   };
 
-  const sendToN8N = async () => {
-    if (!n8nWebhookUrl) {
-      setShowAlert({ message: 'Please enter your N8N webhook URL first', type: 'error' });
+  const sendToMake = async () => {
+    if (!makeWebhookUrl) {
+      setShowAlert({ message: 'Please enter your Make.com webhook URL first', type: 'error' });
       return;
     }
     try {
       const allData = getAllRegistrants();
-      const response = await fetch(n8nWebhookUrl, {
+      const response = await fetch(makeWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -626,22 +638,22 @@ const SalonDinners = () => {
         })
       });
       if (response.ok) {
-        setShowAlert({ message: 'Successfully sent registrants to N8N! Check your Google Sheet.', type: 'success' });
+        setShowAlert({ message: 'Successfully sent registrants to Make.com! Check your Google Sheet.', type: 'success' });
       } else {
-        setShowAlert({ message: 'Error sending to N8N. Please check your webhook URL.', type: 'error' });
+        setShowAlert({ message: 'Error sending to Make.com. Please check your webhook URL.', type: 'error' });
       }
     } catch (error) {
       setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
     }
   };
 
-  const sendWaitlistToN8N = async () => {
-    if (!n8nWebhookUrl) {
-      setShowAlert({ message: 'Please enter your N8N webhook URL first', type: 'error' });
+  const sendWaitlistToMake = async () => {
+    if (!makeWebhookUrl) {
+      setShowAlert({ message: 'Please enter your Make.com webhook URL first', type: 'error' });
       return;
     }
     try {
-      const response = await fetch(n8nWebhookUrl, {
+      const response = await fetch(makeWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -652,9 +664,9 @@ const SalonDinners = () => {
         })
       });
       if (response.ok) {
-        setShowAlert({ message: 'Successfully sent waitlist to N8N! Check your Google Sheet.', type: 'success' });
+        setShowAlert({ message: 'Successfully sent waitlist to Make.com! Check your Google Sheet.', type: 'success' });
       } else {
-        setShowAlert({ message: 'Error sending waitlist to N8N. Please check your webhook URL.', type: 'error' });
+        setShowAlert({ message: 'Error sending waitlist to Make.com. Please check your webhook URL.', type: 'error' });
       }
     } catch (error) {
       setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
@@ -665,7 +677,11 @@ const SalonDinners = () => {
     console.log('Delete clicked:', { dateId, group, index });
     const updatedRegistrations = { ...registrations };
     updatedRegistrations[dateId][group].splice(index, 1);
-    await window.storage.set('salon-registrations', JSON.stringify(updatedRegistrations));
+    try {
+      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+    } catch (e) {
+      console.error('Error saving registrations:', e);
+    }
     setRegistrations(updatedRegistrations);
     setShowDeleteConfirm(null);
     setShowAlert({ message: 'Registration deleted successfully!', type: 'success' });
@@ -778,7 +794,11 @@ const SalonDinners = () => {
         timestamp: original.timestamp // Keep original timestamp
       });
       
-      await window.storage.set('salon-registrations', JSON.stringify(updatedRegistrations));
+      try {
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+      } catch (e) {
+        console.error('Error saving registrations:', e);
+      }
       setRegistrations(updatedRegistrations);
       setEditingRegistrant(null);
       setShowAlert({ message: 'Registration updated successfully!', type: 'success' });
@@ -794,8 +814,8 @@ const SalonDinners = () => {
       setCurrentPage('admin');
       setAdminPassword('');
       setShowAdminLogin(false);
-      setShowAlert(null); // Clear any previous error messages
-    } else {
+      setShowAlert(null);
+  } else {
       setShowAlert({ message: 'Incorrect password', type: 'error' });
       setAdminPassword('');
     }
@@ -820,19 +840,23 @@ const SalonDinners = () => {
     };
     
     try {
-      const result = await window.storage.get('invite-list');
       let inviteList = [];
-      if (result) {
-        inviteList = JSON.parse(result.value);
+      try {
+        const result = localStorage.getItem('invite-list');
+        if (result) {
+          inviteList = JSON.parse(result);
+        }
+      } catch (e) {
+        inviteList = [];
       }
       
       inviteList.push(inviteData);
-      await window.storage.set('invite-list', JSON.stringify(inviteList));
+      localStorage.setItem('invite-list', JSON.stringify(inviteList));
       
-      // Auto-send to N8N webhook if configured
-      if (n8nWebhookUrl) {
+      // Auto-send to Make.com webhook if configured
+      if (makeWebhookUrl) {
         try {
-          await fetch(n8nWebhookUrl, {
+          await fetch(makeWebhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -843,7 +867,7 @@ const SalonDinners = () => {
             })
           });
         } catch (error) {
-          console.error('N8N webhook error:', error);
+          console.error('Make.com webhook error:', error);
         }
       }
       
@@ -1027,11 +1051,11 @@ const SalonDinners = () => {
       <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
         <div className="max-w-md mx-auto">
           <div className="text-center mb-8">
-            <div className="bg-gray-800 rounded-lg p-4 inline-block">
+            <div className="inline-block">
               <img 
                 src="/logo.png" 
                 alt="Napa Institute Logo" 
-                className="h-20 mx-auto"
+                className="h-36 mx-auto"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
@@ -1065,8 +1089,8 @@ const SalonDinners = () => {
                   onClick={() => {
                     setShowAdminLogin(false);
                     setAdminPassword('');
-                    setShowAlert(null); // Clear any error messages
-                  }}
+                    setShowAlert(null);
+                }}
                   className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300"
                 >
                   Cancel
@@ -1090,11 +1114,11 @@ const SalonDinners = () => {
       <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-8">
-            <div className="bg-gray-800 rounded-lg p-4 inline-block">
+            <div className="inline-block">
               <img 
                 src="/logo.png" 
                 alt="Napa Institute Logo" 
-                className="h-20 mx-auto"
+                className="h-36 mx-auto"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'block';
@@ -1341,20 +1365,20 @@ const SalonDinners = () => {
                 </div>
 
                 <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
-                  <h5 className="font-semibold text-gray-800 mb-2">N8N Webhook URL</h5>
+                  <h5 className="font-semibold text-gray-800 mb-2">Make.com Webhook URL</h5>
                   <p className="text-sm text-gray-600 mb-3">
                     All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen.
                   </p>
                   <input
                     type="text"
-                    placeholder="https://your-n8n-instance.com/webhook/salon-dinners"
-                    value={n8nWebhookUrl}
-                    onChange={(e) => setN8nWebhookUrl(e.target.value)}
+                    placeholder="https://hook.us1.make.com/your-webhook-id"
+                    value={makeWebhookUrl}
+                    onChange={(e) => setMakeWebhookUrl(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3"
                   />
                   <button
                     onClick={() => {
-                      localStorage.setItem('n8n-webhook', n8nWebhookUrl);
+                      localStorage.setItem('make-webhook', makeWebhookUrl);
                       setShowAlert({ message: 'Webhook URL saved! All new submissions will be sent automatically.', type: 'success' });
                     }}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 mb-3"
@@ -1374,13 +1398,13 @@ const SalonDinners = () => {
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <button
-                      onClick={sendToN8N}
+                      onClick={sendToMake}
                       className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700"
                     >
                       Export All Registrants ({getAllRegistrants().length})
                     </button>
                     <button
-                      onClick={sendWaitlistToN8N}
+                      onClick={sendWaitlistToMake}
                       disabled={waitlistData.length === 0}
                       className={`px-6 py-2 rounded-lg ${
                         waitlistData.length === 0
@@ -1394,22 +1418,22 @@ const SalonDinners = () => {
                 </div>
 
                 <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                  <h5 className="font-semibold text-gray-800 mb-2">N8N Setup Guide</h5>
+                  <h5 className="font-semibold text-gray-800 mb-2">Make.com Setup Guide</h5>
                   <p className="text-sm text-gray-700 mb-3">
-                    Your N8N workflow will receive all three types through one webhook:
+                    Your Make.com scenario will receive all three types through one webhook:
                   </p>
                   <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside mb-4">
-                    <li>Create workflow in N8N with <strong>Webhook trigger</strong></li>
-                    <li>Add <strong>Switch</strong> node checking <code>{'{{ $json.type }}'}</code></li>
-                    <li>Create 3 branches:
+                    <li>Create a new scenario in Make.com with <strong>Webhooks → Custom webhook</strong> trigger</li>
+                    <li>Add a <strong>Router</strong> module to split by data type</li>
+                    <li>Create 3 routes with filters checking <code>type</code>:
                       <ul className="ml-6 mt-1 space-y-1 text-xs list-disc">
-                        <li><code>registrants</code> → Google Sheets (Registrants tab)</li>
-                        <li><code>waitlist</code> → Google Sheets (Waitlist tab)</li>
-                        <li><code>invite</code> → Google Sheets (Invites tab)</li>
+                        <li><code>registrants</code> → Google Sheets (Add a Row to Registrants sheet)</li>
+                        <li><code>waitlist</code> → Google Sheets (Add a Row to Waitlist sheet)</li>
+                        <li><code>invite</code> → Google Sheets (Add a Row to Invites sheet)</li>
                       </ul>
                     </li>
-                    <li>In each Google Sheets node, map fields from <code>{'{{ $json.data }}'}</code></li>
-                    <li>Activate workflow and paste webhook URL above</li>
+                    <li>In each Google Sheets module, map fields from the <code>data</code> array</li>
+                    <li>Turn on the scenario and paste the webhook URL above</li>
                   </ol>
                   <p className="text-xs text-gray-600">
                     💡 <strong>Tip:</strong> Use the "Export All" buttons above to send existing data, then new submissions will flow automatically.
@@ -1631,11 +1655,11 @@ const SalonDinners = () => {
     <div className="min-h-screen py-12 px-4" style={{ background: '#540006' }}>
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-8">
-          <div className="bg-gray-800 rounded-lg p-4 inline-block">
+          <div className="inline-block">
             <img 
               src="/logo.png" 
               alt="Napa Institute Logo" 
-              className="h-20 mx-auto"
+              className="h-36 mx-auto"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'block';
