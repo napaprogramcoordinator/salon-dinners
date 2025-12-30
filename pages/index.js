@@ -2575,7 +2575,7 @@ const SalonDinners = () => {
 
                     <div className="flex space-x-3">
                       <button
-                        onClick={handleReset}
+                        onClick={handleReset() => setStep('form')}
                         className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
                       >
                         Back
