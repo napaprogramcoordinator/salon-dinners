@@ -33,6 +33,7 @@ const SalonDinners = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [formErrors, setFormErrors] = useState([]);
   const [editingRegistrant, setEditingRegistrant] = useState(null);
+  const [editingWaitlistEntry, setEditingWaitlistEntry] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [showAlert, setShowAlert] = useState(null);
   const [isWaitlist, setIsWaitlist] = useState(false);
@@ -803,13 +804,22 @@ const SalonDinners = () => {
         // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
+            // Convert preferredDates IDs to actual date labels for Google Sheets
+            const preferredDatesLabels = preferredDates.map(dateId => {
+              const date = eventDates.find(d => d.id === dateId);
+              return date ? date.label : dateId;
+            }).join('; ');
+
             await fetch(makeWebhookUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 type: 'waitlist',
                 action: 'new',
-                data: [waitlistEntry],
+                data: [{
+                  ...waitlistEntry,
+                  preferredDatesText: preferredDatesLabels
+                }],
                 exportDate: new Date().toISOString(),
                 totalCount: 1
               })
@@ -1027,23 +1037,23 @@ const SalonDinners = () => {
   };
 
   // ============================================
-  // EDIT FUNCTIONS & ADMIN HANDLERS
+  // EDIT FUNCTIONS FOR REGISTRANTS (with webhook update)
   // ============================================
 
   const startEditRegistrant = (person) => {
-    console.log('Starting edit for:', person);
+    console.log('Starting edit for registrant:', person);
     setEditingRegistrant({
       original: { ...person },
       edited: { ...person }
     });
   };
 
-  const cancelEdit = () => {
-    console.log('Canceling edit');
+  const cancelEditRegistrant = () => {
+    console.log('Canceling registrant edit');
     setEditingRegistrant(null);
   };
 
-  const handleEditChange = (field, value) => {
+  const handleEditRegistrantChange = (field, value) => {
     setEditingRegistrant(prev => ({
       ...prev,
       edited: {
@@ -1053,7 +1063,7 @@ const SalonDinners = () => {
     }));
   };
 
-  const handleEditPictureUpload = (e) => {
+  const handleEditRegistrantPictureUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 10000000) {
@@ -1091,7 +1101,7 @@ const SalonDinners = () => {
           
           console.log(`Edit image compressed: ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
           
-          handleEditChange('picture', compressedDataUrl);
+          handleEditRegistrantChange('picture', compressedDataUrl);
         };
         img.src = reader.result;
       };
@@ -1110,6 +1120,7 @@ const SalonDinners = () => {
 
     const updatedRegistrations = { ...registrations };
     
+    // Find and remove from original location
     const dateRegs = updatedRegistrations[original.dateId][original.group];
     const originalIndex = dateRegs.findIndex(p => 
       p.email === original.email && p.timestamp === original.timestamp
@@ -1120,6 +1131,7 @@ const SalonDinners = () => {
     if (originalIndex !== -1) {
       updatedRegistrations[original.dateId][original.group].splice(originalIndex, 1);
       
+      // Add to new location (might be same or different date/group)
       updatedRegistrations[edited.dateId][edited.group].push({
         name: edited.name,
         email: edited.email,
@@ -1138,12 +1150,227 @@ const SalonDinners = () => {
       }
       setRegistrations(updatedRegistrations);
       setEditingRegistrant(null);
+
+      // Send webhook for update
+      if (makeWebhookUrl) {
+        try {
+          const newDateInfo = eventDates.find(d => d.id === edited.dateId);
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'registrants',
+              action: 'update',
+              data: [{
+                // Original info to find the row
+                originalEmail: original.email,
+                
+                // All updated fields
+                name: edited.name,
+                email: edited.email,
+                phone: edited.phone,
+                professionalTitle: edited.professionalTitle,
+                bio: edited.bio,
+                foodAllergies: edited.foodAllergies,
+                picture: edited.picture,
+                date: newDateInfo?.label,
+                location: newDateInfo?.location,
+                dateId: edited.dateId,
+                group: edited.group,
+                timestamp: original.timestamp
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+          console.log('Webhook sent for registrant update');
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
+        }
+      }
+
       setShowAlert({ message: 'Registration updated successfully!', type: 'success' });
     } else {
       console.error('Could not find original registrant');
       setShowAlert({ message: 'Error: Could not find registrant to update', type: 'error' });
     }
   };
+
+  // ============================================
+  // EDIT FUNCTIONS FOR WAITLIST (with webhook update)
+  // ============================================
+
+  const startEditWaitlistEntry = (person, index) => {
+    console.log('Starting edit for waitlist entry:', person);
+    setEditingWaitlistEntry({
+      original: { ...person, index },
+      edited: { ...person }
+    });
+  };
+
+  const cancelEditWaitlistEntry = () => {
+    console.log('Canceling waitlist edit');
+    setEditingWaitlistEntry(null);
+  };
+
+  const handleEditWaitlistChange = (field, value) => {
+    setEditingWaitlistEntry(prev => ({
+      ...prev,
+      edited: {
+        ...prev.edited,
+        [field]: value
+      }
+    }));
+  };
+
+  const handleEditWaitlistPreferredDateToggle = (dateId) => {
+    setEditingWaitlistEntry(prev => {
+      const currentDates = prev.edited.preferredDates || [];
+      const newDates = currentDates.includes(dateId)
+        ? currentDates.filter(d => d !== dateId)
+        : [...currentDates, dateId];
+      return {
+        ...prev,
+        edited: {
+          ...prev.edited,
+          preferredDates: newDates
+        }
+      };
+    });
+  };
+
+  const handleEditWaitlistPictureUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10000000) {
+        setShowAlert({ message: 'Image must be less than 10MB', type: 'error' });
+        return;
+      }
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          let width = img.width;
+          let height = img.height;
+          const maxSize = 400;
+          
+          if (width > height) {
+            if (width > maxSize) {
+              height *= maxSize / width;
+              width = maxSize;
+            }
+          } else {
+            if (height > maxSize) {
+              width *= maxSize / height;
+              height = maxSize;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          
+          console.log(`Edit image compressed: ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
+          
+          handleEditWaitlistChange('picture', compressedDataUrl);
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const saveEditedWaitlistEntry = async () => {
+    console.log('Saving edited waitlist entry');
+    const { original, edited } = editingWaitlistEntry;
+    
+    if (!edited.name || !edited.email || !edited.bio) {
+      setShowAlert({ message: 'Please fill in all required fields', type: 'error' });
+      return;
+    }
+
+    if (!edited.preferredDates || edited.preferredDates.length === 0) {
+      setShowAlert({ message: 'Please select at least one preferred date', type: 'error' });
+      return;
+    }
+
+    // Update the waitlist array
+    const updatedWaitlist = [...waitlistData];
+    updatedWaitlist[original.index] = {
+      name: edited.name,
+      email: edited.email,
+      phone: edited.phone,
+      professionalTitle: edited.professionalTitle,
+      bio: edited.bio,
+      foodAllergies: edited.foodAllergies,
+      picture: edited.picture,
+      classification: edited.classification,
+      preferredDates: edited.preferredDates,
+      timestamp: original.timestamp
+    };
+
+    try {
+      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+      setWaitlistData(updatedWaitlist);
+      setEditingWaitlistEntry(null);
+
+      // Send webhook for update
+      if (makeWebhookUrl) {
+        try {
+          // Convert preferredDates IDs to actual date labels for Google Sheets
+          const preferredDatesLabels = edited.preferredDates.map(dateId => {
+            const date = eventDates.find(d => d.id === dateId);
+            return date ? date.label : dateId;
+          }).join('; ');
+
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'waitlist',
+              action: 'update',
+              data: [{
+                // Original info to find the row
+                originalEmail: original.email,
+                
+                // All updated fields
+                name: edited.name,
+                email: edited.email,
+                phone: edited.phone,
+                professionalTitle: edited.professionalTitle,
+                bio: edited.bio,
+                foodAllergies: edited.foodAllergies,
+                picture: edited.picture,
+                classification: edited.classification,
+                preferredDates: edited.preferredDates,
+                preferredDatesText: preferredDatesLabels,
+                timestamp: original.timestamp
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+          console.log('Webhook sent for waitlist update');
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
+        }
+      }
+
+      setShowAlert({ message: 'Waitlist entry updated successfully!', type: 'success' });
+    } catch (e) {
+      console.error('Error saving waitlist:', e);
+      setShowAlert({ message: `Error: ${e.message}`, type: 'error' });
+    }
+  };
+
+  // ============================================
+  // ADMIN HANDLERS
+  // ============================================
 
   const handleAdminLogin = () => {
     if (adminPassword === ADMIN_PASSWORD) {
@@ -1222,19 +1449,19 @@ const SalonDinners = () => {
   // MODAL COMPONENTS
   // ============================================
 
-  // Edit Modal Component
-  const EditModal = () => {
+  // Edit Modal Component for Registrants
+  const EditRegistrantModal = () => {
     if (!editingRegistrant) return null;
 
     const { edited } = editingRegistrant;
-    const editWordCount = edited.bio.trim().split(/\s+/).filter(word => word.length > 0).length;
+    const editWordCount = edited.bio ? edited.bio.trim().split(/\s+/).filter(word => word.length > 0).length : 0;
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Edit Registration</h2>
-            <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
+            <button onClick={cancelEditRegistrant} className="text-gray-500 hover:text-gray-700">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -1248,7 +1475,7 @@ const SalonDinners = () => {
                 <input
                   type="text"
                   value={edited.name}
-                  onChange={(e) => handleEditChange('name', e.target.value)}
+                  onChange={(e) => handleEditRegistrantChange('name', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1260,7 +1487,7 @@ const SalonDinners = () => {
                 <input
                   type="email"
                   value={edited.email}
-                  onChange={(e) => handleEditChange('email', e.target.value)}
+                  onChange={(e) => handleEditRegistrantChange('email', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1270,7 +1497,7 @@ const SalonDinners = () => {
                 <input
                   type="tel"
                   value={edited.phone || ''}
-                  onChange={(e) => handleEditChange('phone', e.target.value)}
+                  onChange={(e) => handleEditRegistrantChange('phone', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1280,7 +1507,7 @@ const SalonDinners = () => {
                 <input
                   type="text"
                   value={edited.professionalTitle || ''}
-                  onChange={(e) => handleEditChange('professionalTitle', e.target.value)}
+                  onChange={(e) => handleEditRegistrantChange('professionalTitle', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1298,7 +1525,7 @@ const SalonDinners = () => {
               <input
                 type="file"
                 accept="image/*"
-                onChange={handleEditPictureUpload}
+                onChange={handleEditRegistrantPictureUpload}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1308,8 +1535,8 @@ const SalonDinners = () => {
                 Bio (250 words max) <span className="text-red-600">*</span>
               </label>
               <textarea
-                value={edited.bio}
-                onChange={(e) => handleEditChange('bio', e.target.value)}
+                value={edited.bio || ''}
+                onChange={(e) => handleEditRegistrantChange('bio', e.target.value)}
                 rows={6}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
@@ -1323,7 +1550,7 @@ const SalonDinners = () => {
               <input
                 type="text"
                 value={edited.foodAllergies || ''}
-                onChange={(e) => handleEditChange('foodAllergies', e.target.value)}
+                onChange={(e) => handleEditRegistrantChange('foodAllergies', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -1333,7 +1560,7 @@ const SalonDinners = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Event Date</label>
                 <select
                   value={edited.dateId}
-                  onChange={(e) => handleEditChange('dateId', e.target.value)}
+                  onChange={(e) => handleEditRegistrantChange('dateId', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   {eventDates.map(date => (
@@ -1348,7 +1575,7 @@ const SalonDinners = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Classification</label>
                 <select
                   value={edited.group}
-                  onChange={(e) => handleEditChange('group', e.target.value)}
+                  onChange={(e) => handleEditRegistrantChange('group', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="liberal">Liberal</option>
@@ -1361,7 +1588,7 @@ const SalonDinners = () => {
 
           <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex space-x-3 border-t border-gray-200">
             <button
-              onClick={cancelEdit}
+              onClick={cancelEditRegistrant}
               className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
             >
               Cancel
@@ -1369,6 +1596,169 @@ const SalonDinners = () => {
             <button
               onClick={saveEditedRegistrant}
               className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Edit Modal Component for Waitlist
+  const EditWaitlistModal = () => {
+    if (!editingWaitlistEntry) return null;
+
+    const { edited } = editingWaitlistEntry;
+    const editWordCount = edited.bio ? edited.bio.trim().split(/\s+/).filter(word => word.length > 0).length : 0;
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+        <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+            <h2 className="text-2xl font-bold text-gray-800">Edit Waitlist Entry</h2>
+            <button onClick={cancelEditWaitlistEntry} className="text-gray-500 hover:text-gray-700">
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Full Name <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={edited.name || ''}
+                  onChange={(e) => handleEditWaitlistChange('name', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email <span className="text-red-600">*</span>
+                </label>
+                <input
+                  type="email"
+                  value={edited.email || ''}
+                  onChange={(e) => handleEditWaitlistChange('email', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                <input
+                  type="tel"
+                  value={edited.phone || ''}
+                  onChange={(e) => handleEditWaitlistChange('phone', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Professional Title</label>
+                <input
+                  type="text"
+                  value={edited.professionalTitle || ''}
+                  onChange={(e) => handleEditWaitlistChange('professionalTitle', e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Picture {edited.picture && <span className="text-green-600">(Uploaded)</span>}
+              </label>
+              {edited.picture && (
+                <div className="mb-2">
+                  <img src={edited.picture} alt="Preview" className="w-24 h-24 rounded-full object-cover" />
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleEditWaitlistPictureUpload}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Bio (250 words max) <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                value={edited.bio || ''}
+                onChange={(e) => handleEditWaitlistChange('bio', e.target.value)}
+                rows={6}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <div className={`text-sm mt-1 ${editWordCount > 250 ? 'text-red-600' : 'text-gray-500'}`}>
+                {editWordCount}/250 words
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Food Allergies</label>
+              <input
+                type="text"
+                value={edited.foodAllergies || ''}
+                onChange={(e) => handleEditWaitlistChange('foodAllergies', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Classification</label>
+              <select
+                value={edited.classification || 'moderate'}
+                onChange={(e) => handleEditWaitlistChange('classification', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="liberal">Liberal</option>
+                <option value="moderate">Moderate</option>
+                <option value="conservative">Conservative</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Preferred Dates <span className="text-red-600">*</span>
+              </label>
+              <div className="space-y-2 border border-gray-200 rounded-lg p-3">
+                {eventDates.map((date) => (
+                  <label key={date.id} className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={(edited.preferredDates || []).includes(date.id)}
+                      onChange={() => handleEditWaitlistPreferredDateToggle(date.id)}
+                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                    />
+                    <span className="ml-2 text-sm text-gray-700">
+                      {date.label} - {date.location}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {(!edited.preferredDates || edited.preferredDates.length === 0) && (
+                <p className="text-sm text-red-600 mt-1">Please select at least one preferred date</p>
+              )}
+            </div>
+          </div>
+
+          <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex space-x-3 border-t border-gray-200">
+            <button
+              onClick={cancelEditWaitlistEntry}
+              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={saveEditedWaitlistEntry}
+              className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-semibold hover:bg-orange-700 transition-colors"
             >
               Save Changes
             </button>
@@ -1844,7 +2234,7 @@ const SalonDinners = () => {
                 <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
                   <h5 className="font-semibold text-gray-800 mb-2">Make.com Webhook URL</h5>
                   <p className="text-sm text-gray-600 mb-3">
-                    All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen. Moves and deletions will also sync automatically.
+                    All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen. Moves, edits, and deletions will also sync automatically.
                   </p>
                   <input
                     type="text"
@@ -1868,6 +2258,8 @@ const SalonDinners = () => {
                       <li>• New registrations → <code>type: "registrants", action: "new"</code></li>
                       <li>• New waitlist signups → <code>type: "waitlist", action: "new"</code></li>
                       <li>• Invite requests → <code>type: "invite", action: "new"</code></li>
+                      <li>• Edit registrant → <code>type: "registrants", action: "update"</code></li>
+                      <li>• Edit waitlist → <code>type: "waitlist", action: "update"</code></li>
                       <li>• Move to waitlist → <code>type: "registrants", action: "move_to_waitlist"</code></li>
                       <li>• Move to invite → <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
                       <li>• Move to registrant → <code>type: "waitlist", action: "move_to_registrant"</code></li>
@@ -1909,6 +2301,7 @@ const SalonDinners = () => {
                     <li>Create routes for each action type:
                       <ul className="ml-6 mt-1 space-y-1 text-xs list-disc">
                         <li><code>action = "new"</code> → Add Row to appropriate sheet</li>
+                        <li><code>action = "update"</code> → Search by email, Delete row, Add new row</li>
                         <li><code>action = "move_to_*"</code> → Search & Delete from source, Add to destination</li>
                         <li><code>action = "delete"</code> → Search & Delete from sheet</li>
                       </ul>
@@ -1945,13 +2338,26 @@ const SalonDinners = () => {
                                   <p className="text-sm text-gray-600">{person.professionalTitle}</p>
                                 )}
                               </div>
-                              <button
-                                onClick={() => setShowWaitlistRemoveOptions({ person, index: idx })}
-                                className="text-red-600 hover:text-red-700 text-sm flex items-center"
-                              >
-                                <Trash2 className="w-4 h-4 mr-1" />
-                                Remove
-                              </button>
+                              <div className="flex space-x-2 flex-shrink-0">
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    startEditWaitlistEntry(person, idx);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 text-sm flex items-center"
+                                >
+                                  <Edit className="w-4 h-4 mr-1" />
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => setShowWaitlistRemoveOptions({ person, index: idx })}
+                                  className="text-red-600 hover:text-red-700 text-sm flex items-center"
+                                >
+                                  <Trash2 className="w-4 h-4 mr-1" />
+                                  Remove
+                                </button>
+                              </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-2">
                               <div><span className="font-medium">Email:</span> {person.email}</div>
@@ -1992,7 +2398,8 @@ const SalonDinners = () => {
         </div>
 
         {/* Modals */}
-        <EditModal />
+        <EditRegistrantModal />
+        <EditWaitlistModal />
         <RemoveOptionsModal />
         <WaitlistRemoveOptionsModal />
 
@@ -2677,7 +3084,8 @@ const SalonDinners = () => {
       </div>
 
       {/* Modals */}
-      <EditModal />
+      <EditRegistrantModal />
+      <EditWaitlistModal />
       <RemoveOptionsModal />
       <WaitlistRemoveOptionsModal />
 
