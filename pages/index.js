@@ -655,7 +655,7 @@ const SalonDinners = () => {
   };
 
   const handleSubmitForm = () => {
-    if (!formData.name || !formData.email || !formData.bio || !formData.picture) {
+    if (!formData.name || !formData.email || !formData.bio) {
       setShowAlert({ message: 'Please fill in all required fields', type: 'error' });
       return;
     }
@@ -2749,7 +2749,7 @@ const SalonDinners = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Profile Picture <span className="text-red-600 text-lg">*</span>
+                    Profile Picture <span className="text-gray-500 text-sm">(Optional)</span>
                   </label>
                   <div className="mt-2">
                     {formData.picturePreview ? (
