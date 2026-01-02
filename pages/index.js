@@ -2749,7 +2749,7 @@ const SalonDinners = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Profile Picture <span className="text-gray-500 text-sm">(Optional)</span>
+                    Profile Picture <span className="text-gray-500 text-sm"></span>
                   </label>
                   <div className="mt-2">
                     {formData.picturePreview ? (
