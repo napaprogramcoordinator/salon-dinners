@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
+import { supabase } from './supabaseClient';
 
 const SalonDinners = () => {
   const [currentPage, setCurrentPage] = useState('public');
@@ -33,7 +34,6 @@ const SalonDinners = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [formErrors, setFormErrors] = useState([]);
   const [editingRegistrant, setEditingRegistrant] = useState(null);
-  const [editingWaitlistEntry, setEditingWaitlistEntry] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [showAlert, setShowAlert] = useState(null);
   const [isWaitlist, setIsWaitlist] = useState(false);
@@ -78,34 +78,80 @@ const SalonDinners = () => {
     loadRegistrations();
     loadWaitlistData();
     loadInviteList();
-    try {
-      const savedWebhook = localStorage.getItem('make-webhook');
-      if (savedWebhook) {
-        setMakeWebhookUrl(savedWebhook);
-      }
-    } catch (e) {
-      console.error('Error loading webhook URL:', e);
-    }
+    loadWebhookUrl();
   }, []);
 
-  const loadInviteList = () => {
+  const loadInviteList = async () => {
     if (typeof window === 'undefined') return;
     try {
-      const result = localStorage.getItem('invite-list');
-      if (result) {
-        setInviteList(JSON.parse(result));
+      const { data, error } = await supabase
+        .from('invite_list')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (data) {
+        const formatted = data.map(item => ({
+          name: item.name,
+          email: item.email,
+          timestamp: item.timestamp,
+          movedFromRegistration: item.moved_from_registration,
+          movedFromWaitlist: item.moved_from_waitlist,
+          originalDate: item.original_date,
+          originalLocation: item.original_location
+        }));
+        setInviteList(formatted);
       }
     } catch (error) {
       console.error('Error loading invite list:', error);
     }
   };
 
+  const loadWebhookUrl = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'make_webhook_url')
+        .single();
+      
+      if (data && data.value) {
+        setMakeWebhookUrl(data.value);
+      }
+    } catch (e) {
+      console.error('Error loading webhook URL:', e);
+    }
+  };
+
   const loadWaitlistData = async () => {
     if (typeof window === 'undefined') return;
     try {
-      const result = localStorage.getItem('waitlist');
-      if (result) {
-        setWaitlistData(JSON.parse(result));
+      const { data, error } = await supabase
+        .from('waitlist')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      
+      if (data) {
+        const formatted = data.map(item => ({
+          name: item.name,
+          email: item.email,
+          phone: item.phone,
+          professionalTitle: item.professional_title,
+          bio: item.bio,
+          foodAllergies: item.food_allergies,
+          picture: item.picture,
+          classification: item.classification,
+          preferredDates: item.preferred_dates,
+          timestamp: item.timestamp,
+          movedFromRegistration: item.moved_from_registration,
+          originalDate: item.original_date,
+          originalLocation: item.original_location,
+          pictureNote: item.picture_note
+        }));
+        setWaitlistData(formatted);
       }
     } catch (error) {
       console.error('Error loading waitlist:', error);
@@ -118,28 +164,44 @@ const SalonDinners = () => {
       return;
     }
     try {
-      const result = localStorage.getItem('salon-registrations');
-      if (result) {
-        setRegistrations(JSON.parse(result));
-      } else {
-        const initialData = {};
-        eventDates.forEach(date => {
-          initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('*');
+      
+      if (error) throw error;
+      
+      const grouped = {};
+      eventDates.forEach(date => {
+        grouped[date.id] = { liberal: [], moderate: [], conservative: [] };
+      });
+      
+      if (data) {
+        data.forEach(reg => {
+          if (grouped[reg.date_id] && grouped[reg.date_id][reg.classification]) {
+            grouped[reg.date_id][reg.classification].push({
+              name: reg.name,
+              email: reg.email,
+              phone: reg.phone,
+              professionalTitle: reg.professional_title,
+              bio: reg.bio,
+              foodAllergies: reg.food_allergies,
+              picture: reg.picture,
+              timestamp: reg.timestamp,
+              movedFromWaitlist: reg.moved_from_waitlist,
+              pictureNote: reg.picture_note
+            });
+          }
         });
-        setRegistrations(initialData);
-        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
       }
+      
+      setRegistrations(grouped);
     } catch (error) {
+      console.error('Error loading registrations:', error);
       const initialData = {};
       eventDates.forEach(date => {
         initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
       });
       setRegistrations(initialData);
-      try {
-        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
-      } catch (e) {
-        console.error('Error saving initial data:', e);
-      }
     }
     setLoading(false);
   };
@@ -167,49 +229,62 @@ const SalonDinners = () => {
         originalLocation: person.location
       };
 
-      const updatedWaitlist = [...waitlistData, waitlistEntry];
-      
-      const updatedRegistrations = { ...registrations };
-      const dateRegs = updatedRegistrations[person.dateId][person.group];
-      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
-      
-      if (index !== -1) {
-        updatedRegistrations[person.dateId][person.group].splice(index, 1);
-        
-        localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
-        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-        
-        setWaitlistData(updatedWaitlist);
-        setRegistrations(updatedRegistrations);
-        setShowRemoveOptions(null);
+      const { error: waitlistError } = await supabase
+        .from('waitlist')
+        .insert([{
+          name: waitlistEntry.name,
+          email: waitlistEntry.email,
+          phone: waitlistEntry.phone,
+          professional_title: waitlistEntry.professionalTitle,
+          bio: waitlistEntry.bio,
+          food_allergies: waitlistEntry.foodAllergies,
+          picture: waitlistEntry.picture,
+          classification: waitlistEntry.classification,
+          preferred_dates: waitlistEntry.preferredDates,
+          timestamp: waitlistEntry.timestamp,
+          moved_from_registration: true,
+          original_date: waitlistEntry.originalDate,
+          original_location: waitlistEntry.originalLocation
+        }]);
 
-        // Send webhook to delete from Registrations and add to Waitlist
-        if (makeWebhookUrl) {
-          try {
-            await fetch(makeWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'registrants',
-                action: 'move_to_waitlist',
-                data: [{
-                  ...waitlistEntry,
-                  originalDateId: person.dateId,
-                  originalGroup: person.group
-                }],
-                exportDate: new Date().toISOString(),
-                totalCount: 1
-              })
-            });
-          } catch (error) {
-            console.error('Make.com webhook error:', error);
-          }
+      if (waitlistError) throw waitlistError;
+
+      const { error: deleteError } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('email', person.email)
+        .eq('date_id', person.dateId)
+        .eq('classification', person.group);
+
+      if (deleteError) throw deleteError;
+
+      await loadRegistrations();
+      await loadWaitlistData();
+      setShowRemoveOptions(null);
+
+      if (makeWebhookUrl) {
+        try {
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'registrants',
+              action: 'move_to_waitlist',
+              data: [{
+                ...waitlistEntry,
+                originalDateId: person.dateId,
+                originalGroup: person.group
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
         }
-
-        setShowAlert({ message: `${person.name} moved to waitlist successfully!`, type: 'success' });
-      } else {
-        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
       }
+
+      setShowAlert({ message: `${person.name} moved to waitlist successfully!`, type: 'success' });
     } catch (error) {
       console.error('Error moving to waitlist:', error);
       setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
@@ -228,59 +303,55 @@ const SalonDinners = () => {
         originalLocation: person.location
       };
 
-      let currentInviteList = [];
-      try {
-        const stored = localStorage.getItem('invite-list');
-        if (stored) {
-          currentInviteList = JSON.parse(stored);
-        }
-      } catch (e) {
-        currentInviteList = [];
-      }
-      
-      const updatedInviteList = [...currentInviteList, inviteEntry];
-      
-      const updatedRegistrations = { ...registrations };
-      const dateRegs = updatedRegistrations[person.dateId][person.group];
-      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
-      
-      if (index !== -1) {
-        updatedRegistrations[person.dateId][person.group].splice(index, 1);
-        
-        localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
-        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-        
-        setInviteList(updatedInviteList);
-        setRegistrations(updatedRegistrations);
-        setShowRemoveOptions(null);
+      const { error: inviteError } = await supabase
+        .from('invite_list')
+        .insert([{
+          name: inviteEntry.name,
+          email: inviteEntry.email,
+          timestamp: inviteEntry.timestamp,
+          moved_from_registration: true,
+          original_date: inviteEntry.originalDate,
+          original_location: inviteEntry.originalLocation
+        }]);
 
-        // Send webhook to delete from Registrations and add to Invites
-        if (makeWebhookUrl) {
-          try {
-            await fetch(makeWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'registrants',
-                action: 'move_to_invite',
-                data: [{
-                  ...inviteEntry,
-                  originalDateId: person.dateId,
-                  originalGroup: person.group
-                }],
-                exportDate: new Date().toISOString(),
-                totalCount: 1
-              })
-            });
-          } catch (error) {
-            console.error('Make.com webhook error:', error);
-          }
-        }
+      if (inviteError) throw inviteError;
 
-        setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
-      } else {
-        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      const { error: deleteError } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('email', person.email)
+        .eq('date_id', person.dateId)
+        .eq('classification', person.group);
+
+      if (deleteError) throw deleteError;
+
+      await loadRegistrations();
+      await loadInviteList();
+      setShowRemoveOptions(null);
+
+      if (makeWebhookUrl) {
+        try {
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'registrants',
+              action: 'move_to_invite',
+              data: [{
+                ...inviteEntry,
+                originalDateId: person.dateId,
+                originalGroup: person.group
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
+        }
       }
+
+      setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
     } catch (error) {
       console.error('Error moving to invite list:', error);
       setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
@@ -290,45 +361,43 @@ const SalonDinners = () => {
   // Delete registrant permanently (with webhook)
   const deleteRegistrantPermanently = async (person) => {
     try {
-      const updatedRegistrations = { ...registrations };
-      const dateRegs = updatedRegistrations[person.dateId][person.group];
-      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
-      
-      if (index !== -1) {
-        updatedRegistrations[person.dateId][person.group].splice(index, 1);
-        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-        setRegistrations(updatedRegistrations);
-        setShowRemoveOptions(null);
+      const { error } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('email', person.email)
+        .eq('date_id', person.dateId)
+        .eq('classification', person.group);
 
-        // Send webhook to delete from Registrations
-        if (makeWebhookUrl) {
-          try {
-            await fetch(makeWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'registrants',
-                action: 'delete',
-                data: [{
-                  email: person.email,
-                  name: person.name,
-                  dateId: person.dateId,
-                  date: person.date,
-                  group: person.group
-                }],
-                exportDate: new Date().toISOString(),
-                totalCount: 1
-              })
-            });
-          } catch (error) {
-            console.error('Make.com webhook error:', error);
-          }
+      if (error) throw error;
+
+      await loadRegistrations();
+      setShowRemoveOptions(null);
+
+      if (makeWebhookUrl) {
+        try {
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'registrants',
+              action: 'delete',
+              data: [{
+                email: person.email,
+                name: person.name,
+                dateId: person.dateId,
+                date: person.date,
+                group: person.group
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+        } catch (error) {
+          console.error('Make.com webhook error:', error);
         }
-
-        setShowAlert({ message: `${person.name} has been permanently deleted.`, type: 'success' });
-      } else {
-        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
       }
+
+      setShowAlert({ message: `${person.name} has been permanently deleted.`, type: 'success' });
     } catch (error) {
       console.error('Error deleting registrant:', error);
       setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
@@ -339,47 +408,53 @@ const SalonDinners = () => {
   const moveFromWaitlistToRegistration = async (waitlistIndex, dateId, group) => {
     const person = waitlistData[waitlistIndex];
     
-    const updatedRegistrations = { ...registrations };
-    const newRegistrant = {
-      name: person.name,
-      email: person.email,
-      phone: person.phone,
-      professionalTitle: person.professionalTitle,
-      bio: person.bio,
-      foodAllergies: person.foodAllergies,
-      picture: person.picture,
-      timestamp: new Date().toISOString(),
-      movedFromWaitlist: true
-    };
-    
-    updatedRegistrations[dateId][group].push(newRegistrant);
-    
-    const updatedWaitlist = [...waitlistData];
-    updatedWaitlist.splice(waitlistIndex, 1);
-    
     try {
-      const regString = JSON.stringify(updatedRegistrations);
-      const regSizeKB = new Blob([regString]).size / 1024;
-      console.log(`Registration data size after move: ${regSizeKB.toFixed(2)} KB`);
+      const dateInfo = eventDates.find(d => d.id === dateId);
+      const newRegistrant = {
+        name: person.name,
+        email: person.email,
+        phone: person.phone,
+        professionalTitle: person.professionalTitle,
+        bio: person.bio,
+        foodAllergies: person.foodAllergies,
+        picture: person.picture,
+        timestamp: new Date().toISOString(),
+        movedFromWaitlist: true
+      };
       
-      if (regSizeKB > 4500) {
-        console.warn('Data size exceeds limit after moving, removing picture');
-        const lastAdded = updatedRegistrations[dateId][group][updatedRegistrations[dateId][group].length - 1];
-        lastAdded.picture = null;
-        lastAdded.pictureNote = 'Picture removed due to storage limit';
-      }
-      
-      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
-      
-      setRegistrations(updatedRegistrations);
-      setWaitlistData(updatedWaitlist);
+      const { error: regError } = await supabase
+        .from('registrations')
+        .insert([{
+          name: newRegistrant.name,
+          email: newRegistrant.email,
+          phone: newRegistrant.phone,
+          professional_title: newRegistrant.professionalTitle,
+          bio: newRegistrant.bio,
+          food_allergies: newRegistrant.foodAllergies,
+          picture: newRegistrant.picture,
+          date_id: dateId,
+          date_label: dateInfo?.label,
+          location: dateInfo?.location,
+          classification: group,
+          timestamp: newRegistrant.timestamp,
+          moved_from_waitlist: true
+        }]);
+
+      if (regError) throw regError;
+
+      const { error: deleteError } = await supabase
+        .from('waitlist')
+        .delete()
+        .eq('email', person.email);
+
+      if (deleteError) throw deleteError;
+
+      await loadRegistrations();
+      await loadWaitlistData();
       setMovingFromWaitlist(null);
 
-      // Send webhook to delete from Waitlist and add to Registrations
       if (makeWebhookUrl) {
         try {
-          const dateInfo = eventDates.find(d => d.id === dateId);
           await fetch(makeWebhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -413,16 +488,19 @@ const SalonDinners = () => {
   // Delete from waitlist (with webhook)
   const deleteFromWaitlist = async (index) => {
     const person = waitlistData[index];
-    const updated = [...waitlistData];
-    updated.splice(index, 1);
     
     try {
-      localStorage.setItem('waitlist', JSON.stringify(updated));
-      setWaitlistData(updated);
+      const { error } = await supabase
+        .from('waitlist')
+        .delete()
+        .eq('email', person.email);
+
+      if (error) throw error;
+
+      await loadWaitlistData();
       setShowDeleteConfirm(null);
       setShowWaitlistRemoveOptions(null);
 
-      // Send webhook to delete from Waitlist
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -445,9 +523,9 @@ const SalonDinners = () => {
       }
 
       setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
-    } catch (e) {
-      console.error('Error saving waitlist:', e);
-      setShowAlert({ message: `Error: ${e.message}`, type: 'error' });
+    } catch (error) {
+      console.error('Error deleting from waitlist:', error);
+      setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
     }
   };
 
@@ -463,28 +541,28 @@ const SalonDinners = () => {
         movedFromWaitlist: true
       };
 
-      let currentInviteList = [];
-      try {
-        const stored = localStorage.getItem('invite-list');
-        if (stored) {
-          currentInviteList = JSON.parse(stored);
-        }
-      } catch (e) {
-        currentInviteList = [];
-      }
-      
-      const updatedInviteList = [...currentInviteList, inviteEntry];
-      const updatedWaitlist = [...waitlistData];
-      updatedWaitlist.splice(index, 1);
-      
-      localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
-      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
-      
-      setInviteList(updatedInviteList);
-      setWaitlistData(updatedWaitlist);
+      const { error: inviteError } = await supabase
+        .from('invite_list')
+        .insert([{
+          name: inviteEntry.name,
+          email: inviteEntry.email,
+          timestamp: inviteEntry.timestamp,
+          moved_from_waitlist: true
+        }]);
+
+      if (inviteError) throw inviteError;
+
+      const { error: deleteError } = await supabase
+        .from('waitlist')
+        .delete()
+        .eq('email', person.email);
+
+      if (deleteError) throw deleteError;
+
+      await loadInviteList();
+      await loadWaitlistData();
       setShowWaitlistRemoveOptions(null);
 
-      // Send webhook to delete from Waitlist and add to Invites
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -770,56 +848,35 @@ const SalonDinners = () => {
       };
 
       try {
-        let waitlist = [];
-        try {
-          const result = localStorage.getItem('waitlist');
-          if (result) {
-            waitlist = JSON.parse(result);
-          }
-        } catch (getError) {
-          console.log('Waitlist does not exist yet, creating new one');
-          waitlist = [];
-        }
+        const { data, error } = await supabase
+          .from('waitlist')
+          .insert([{
+            name: waitlistEntry.name,
+            email: waitlistEntry.email,
+            phone: waitlistEntry.phone,
+            professional_title: waitlistEntry.professionalTitle,
+            bio: waitlistEntry.bio,
+            food_allergies: waitlistEntry.foodAllergies,
+            picture: waitlistEntry.picture,
+            classification: waitlistEntry.classification,
+            preferred_dates: waitlistEntry.preferredDates,
+            timestamp: waitlistEntry.timestamp
+          }])
+          .select();
+
+        if (error) throw error;
         
-        waitlist.push(waitlistEntry);
-        console.log('Saving waitlist:', waitlist);
+        await loadWaitlistData();
         
-        const waitlistString = JSON.stringify(waitlist);
-        const waitlistSizeKB = new Blob([waitlistString]).size / 1024;
-        console.log(`Waitlist size: ${waitlistSizeKB.toFixed(2)} KB`);
-        
-        if (waitlistSizeKB > 4500) {
-          console.warn('Waitlist size exceeds limit, removing picture');
-          waitlist[waitlist.length - 1].picture = null;
-          waitlist[waitlist.length - 1].pictureNote = 'Picture removed due to storage limit';
-          const reducedWaitlistString = JSON.stringify(waitlist);
-          localStorage.setItem('waitlist', reducedWaitlistString);
-          setShowAlert({ message: 'Added to waitlist! Note: Picture could not be saved due to storage limits.', type: 'success' });
-        } else {
-          localStorage.setItem('waitlist', waitlistString);
-        }
-        
-        setWaitlistData(waitlist);
-        
-        // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
-            // Convert preferredDates IDs to actual date labels for Google Sheets
-            const preferredDatesLabels = preferredDates.map(dateId => {
-              const date = eventDates.find(d => d.id === dateId);
-              return date ? date.label : dateId;
-            }).join('; ');
-
             await fetch(makeWebhookUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 type: 'waitlist',
                 action: 'new',
-                data: [{
-                  ...waitlistEntry,
-                  preferredDatesText: preferredDatesLabels
-                }],
+                data: [waitlistEntry],
                 exportDate: new Date().toISOString(),
                 totalCount: 1
               })
@@ -839,8 +896,7 @@ const SalonDinners = () => {
     } else {
       console.log('Adding to regular registration for date:', selectedDate);
       try {
-        const updatedRegistrations = { ...registrations };
-        
+        const date = eventDates.find(d => d.id === selectedDate);
         const registrationEntry = {
           name: formData.name,
           email: formData.email,
@@ -852,31 +908,32 @@ const SalonDinners = () => {
           timestamp: new Date().toISOString()
         };
         
-        updatedRegistrations[selectedDate][classification].push(registrationEntry);
+        const { data, error } = await supabase
+          .from('registrations')
+          .insert([{
+            name: registrationEntry.name,
+            email: registrationEntry.email,
+            phone: registrationEntry.phone,
+            professional_title: registrationEntry.professionalTitle,
+            bio: registrationEntry.bio,
+            food_allergies: registrationEntry.foodAllergies,
+            picture: registrationEntry.picture,
+            date_id: selectedDate,
+            date_label: date?.label,
+            location: date?.location,
+            classification: classification,
+            timestamp: registrationEntry.timestamp
+          }])
+          .select();
+
+        if (error) throw error;
         
-        const dataString = JSON.stringify(updatedRegistrations);
-        const dataSizeKB = new Blob([dataString]).size / 1024;
-        console.log(`Data size: ${dataSizeKB.toFixed(2)} KB`);
+        await loadRegistrations();
         
-        if (dataSizeKB > 4500) {
-          console.warn('Data size exceeds limit, removing picture from this registration');
-          const lastRegistrant = updatedRegistrations[selectedDate][classification][updatedRegistrations[selectedDate][classification].length - 1];
-          lastRegistrant.picture = null;
-          lastRegistrant.pictureNote = 'Picture removed due to storage limit';
-          const reducedDataString = JSON.stringify(updatedRegistrations);
-          localStorage.setItem('salon-registrations', reducedDataString);
-          setShowAlert({ message: 'Registration successful! Note: Picture could not be saved due to storage limits.', type: 'success' });
-        } else {
-          localStorage.setItem('salon-registrations', dataString);
-        }
-        
-        setRegistrations(updatedRegistrations);
         console.log('Regular registration successful');
         
-        // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
-            const date = eventDates.find(d => d.id === selectedDate);
             const registrantData = {
               ...registrationEntry,
               date: date?.label,
@@ -1037,23 +1094,23 @@ const SalonDinners = () => {
   };
 
   // ============================================
-  // EDIT FUNCTIONS FOR REGISTRANTS (with webhook update)
+  // EDIT FUNCTIONS & ADMIN HANDLERS
   // ============================================
 
   const startEditRegistrant = (person) => {
-    console.log('Starting edit for registrant:', person);
+    console.log('Starting edit for:', person);
     setEditingRegistrant({
       original: { ...person },
       edited: { ...person }
     });
   };
 
-  const cancelEditRegistrant = () => {
-    console.log('Canceling registrant edit');
+  const cancelEdit = () => {
+    console.log('Canceling edit');
     setEditingRegistrant(null);
   };
 
-  const handleEditRegistrantChange = (field, value) => {
+  const handleEditChange = (field, value) => {
     setEditingRegistrant(prev => ({
       ...prev,
       edited: {
@@ -1063,7 +1120,7 @@ const SalonDinners = () => {
     }));
   };
 
-  const handleEditRegistrantPictureUpload = (e) => {
+  const handleEditPictureUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
       if (file.size > 10000000) {
@@ -1101,7 +1158,7 @@ const SalonDinners = () => {
           
           console.log(`Edit image compressed: ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
           
-          handleEditRegistrantChange('picture', compressedDataUrl);
+          handleEditChange('picture', compressedDataUrl);
         };
         img.src = reader.result;
       };
@@ -1118,259 +1175,44 @@ const SalonDinners = () => {
       return;
     }
 
-    const updatedRegistrations = { ...registrations };
-    
-    // Find and remove from original location
-    const dateRegs = updatedRegistrations[original.dateId][original.group];
-    const originalIndex = dateRegs.findIndex(p => 
-      p.email === original.email && p.timestamp === original.timestamp
-    );
-    
-    console.log('Found original at index:', originalIndex);
-    
-    if (originalIndex !== -1) {
-      updatedRegistrations[original.dateId][original.group].splice(originalIndex, 1);
-      
-      // Add to new location (might be same or different date/group)
-      updatedRegistrations[edited.dateId][edited.group].push({
-        name: edited.name,
-        email: edited.email,
-        phone: edited.phone,
-        professionalTitle: edited.professionalTitle,
-        bio: edited.bio,
-        foodAllergies: edited.foodAllergies,
-        picture: edited.picture,
-        timestamp: original.timestamp
-      });
-      
-      try {
-        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
-      } catch (e) {
-        console.error('Error saving registrations:', e);
-      }
-      setRegistrations(updatedRegistrations);
-      setEditingRegistrant(null);
-
-      // Send webhook for update
-      if (makeWebhookUrl) {
-        try {
-          const newDateInfo = eventDates.find(d => d.id === edited.dateId);
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'registrants',
-              action: 'update',
-              data: [{
-                // Original info to find the row
-                originalEmail: original.email,
-                
-                // All updated fields
-                name: edited.name,
-                email: edited.email,
-                phone: edited.phone,
-                professionalTitle: edited.professionalTitle,
-                bio: edited.bio,
-                foodAllergies: edited.foodAllergies,
-                picture: edited.picture,
-                date: newDateInfo?.label,
-                location: newDateInfo?.location,
-                dateId: edited.dateId,
-                group: edited.group,
-                timestamp: original.timestamp
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-          console.log('Webhook sent for registrant update');
-        } catch (error) {
-          console.error('Make.com webhook error:', error);
-        }
-      }
-
-      setShowAlert({ message: 'Registration updated successfully!', type: 'success' });
-    } else {
-      console.error('Could not find original registrant');
-      setShowAlert({ message: 'Error: Could not find registrant to update', type: 'error' });
-    }
-  };
-
-  // ============================================
-  // EDIT FUNCTIONS FOR WAITLIST (with webhook update)
-  // ============================================
-
-  const startEditWaitlistEntry = (person, index) => {
-    console.log('Starting edit for waitlist entry:', person);
-    setEditingWaitlistEntry({
-      original: { ...person, index },
-      edited: { ...person }
-    });
-  };
-
-  const cancelEditWaitlistEntry = () => {
-    console.log('Canceling waitlist edit');
-    setEditingWaitlistEntry(null);
-  };
-
-  const handleEditWaitlistChange = (field, value) => {
-    setEditingWaitlistEntry(prev => ({
-      ...prev,
-      edited: {
-        ...prev.edited,
-        [field]: value
-      }
-    }));
-  };
-
-  const handleEditWaitlistPreferredDateToggle = (dateId) => {
-    setEditingWaitlistEntry(prev => {
-      const currentDates = prev.edited.preferredDates || [];
-      const newDates = currentDates.includes(dateId)
-        ? currentDates.filter(d => d !== dateId)
-        : [...currentDates, dateId];
-      return {
-        ...prev,
-        edited: {
-          ...prev.edited,
-          preferredDates: newDates
-        }
-      };
-    });
-  };
-
-  const handleEditWaitlistPictureUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 10000000) {
-        setShowAlert({ message: 'Image must be less than 10MB', type: 'error' });
-        return;
-      }
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          
-          let width = img.width;
-          let height = img.height;
-          const maxSize = 400;
-          
-          if (width > height) {
-            if (width > maxSize) {
-              height *= maxSize / width;
-              width = maxSize;
-            }
-          } else {
-            if (height > maxSize) {
-              width *= maxSize / height;
-              height = maxSize;
-            }
-          }
-          
-          canvas.width = width;
-          canvas.height = height;
-          ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-          
-          console.log(`Edit image compressed: ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
-          
-          handleEditWaitlistChange('picture', compressedDataUrl);
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const saveEditedWaitlistEntry = async () => {
-    console.log('Saving edited waitlist entry');
-    const { original, edited } = editingWaitlistEntry;
-    
-    if (!edited.name || !edited.email || !edited.bio) {
-      setShowAlert({ message: 'Please fill in all required fields', type: 'error' });
-      return;
-    }
-
-    if (!edited.preferredDates || edited.preferredDates.length === 0) {
-      setShowAlert({ message: 'Please select at least one preferred date', type: 'error' });
-      return;
-    }
-
-    // Update the waitlist array
-    const updatedWaitlist = [...waitlistData];
-    updatedWaitlist[original.index] = {
-      name: edited.name,
-      email: edited.email,
-      phone: edited.phone,
-      professionalTitle: edited.professionalTitle,
-      bio: edited.bio,
-      foodAllergies: edited.foodAllergies,
-      picture: edited.picture,
-      classification: edited.classification,
-      preferredDates: edited.preferredDates,
-      timestamp: original.timestamp
-    };
-
     try {
-      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
-      setWaitlistData(updatedWaitlist);
-      setEditingWaitlistEntry(null);
+      const { error: deleteError } = await supabase
+        .from('registrations')
+        .delete()
+        .eq('email', original.email)
+        .eq('date_id', original.dateId)
+        .eq('classification', original.group);
 
-      // Send webhook for update
-      if (makeWebhookUrl) {
-        try {
-          // Convert preferredDates IDs to actual date labels for Google Sheets
-          const preferredDatesLabels = edited.preferredDates.map(dateId => {
-            const date = eventDates.find(d => d.id === dateId);
-            return date ? date.label : dateId;
-          }).join('; ');
+      if (deleteError) throw deleteError;
 
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'waitlist',
-              action: 'update',
-              data: [{
-                // Original info to find the row
-                originalEmail: original.email,
-                
-                // All updated fields
-                name: edited.name,
-                email: edited.email,
-                phone: edited.phone,
-                professionalTitle: edited.professionalTitle,
-                bio: edited.bio,
-                foodAllergies: edited.foodAllergies,
-                picture: edited.picture,
-                classification: edited.classification,
-                preferredDates: edited.preferredDates,
-                preferredDatesText: preferredDatesLabels,
-                timestamp: original.timestamp
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-          console.log('Webhook sent for waitlist update');
-        } catch (error) {
-          console.error('Make.com webhook error:', error);
-        }
-      }
+      const dateInfo = eventDates.find(d => d.id === edited.dateId);
+      const { error: insertError } = await supabase
+        .from('registrations')
+        .insert([{
+          name: edited.name,
+          email: edited.email,
+          phone: edited.phone,
+          professional_title: edited.professionalTitle,
+          bio: edited.bio,
+          food_allergies: edited.foodAllergies,
+          picture: edited.picture,
+          date_id: edited.dateId,
+          date_label: dateInfo?.label,
+          location: dateInfo?.location,
+          classification: edited.group,
+          timestamp: original.timestamp
+        }]);
 
-      setShowAlert({ message: 'Waitlist entry updated successfully!', type: 'success' });
-    } catch (e) {
-      console.error('Error saving waitlist:', e);
-      setShowAlert({ message: `Error: ${e.message}`, type: 'error' });
+      if (insertError) throw insertError;
+
+      await loadRegistrations();
+      setEditingRegistrant(null);
+      setShowAlert({ message: 'Registration updated successfully!', type: 'success' });
+    } catch (error) {
+      console.error('Error saving edited registrant:', error);
+      setShowAlert({ message: 'Error: Could not update registration', type: 'error' });
     }
   };
-
-  // ============================================
-  // ADMIN HANDLERS
-  // ============================================
 
   const handleAdminLogin = () => {
     if (adminPassword === ADMIN_PASSWORD) {
@@ -1397,28 +1239,21 @@ const SalonDinners = () => {
       return;
     }
     
-    const inviteData = {
-      name: inviteFormData.name,
-      email: inviteFormData.email,
-      timestamp: new Date().toISOString()
-    };
-    
     try {
-      let inviteListData = [];
-      try {
-        const result = localStorage.getItem('invite-list');
-        if (result) {
-          inviteListData = JSON.parse(result);
-        }
-      } catch (e) {
-        inviteListData = [];
-      }
+      const inviteData = {
+        name: inviteFormData.name,
+        email: inviteFormData.email,
+        timestamp: new Date().toISOString()
+      };
       
-      inviteListData.push(inviteData);
-      localStorage.setItem('invite-list', JSON.stringify(inviteListData));
-      setInviteList(inviteListData);
+      const { error } = await supabase
+        .from('invite_list')
+        .insert([inviteData]);
+
+      if (error) throw error;
+
+      await loadInviteList();
       
-      // Send to webhook with action: "new"
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -1441,6 +1276,7 @@ const SalonDinners = () => {
       setInviteFormData({ name: '', email: '' });
       setStep('landing');
     } catch (error) {
+      console.error('Error saving invite:', error);
       setShowAlert({ message: 'Error saving your information. Please try again.', type: 'error' });
     }
   };
@@ -1449,19 +1285,19 @@ const SalonDinners = () => {
   // MODAL COMPONENTS
   // ============================================
 
-  // Edit Modal Component for Registrants
-  const EditRegistrantModal = () => {
+  // Edit Modal Component
+  const EditModal = () => {
     if (!editingRegistrant) return null;
 
     const { edited } = editingRegistrant;
-    const editWordCount = edited.bio ? edited.bio.trim().split(/\s+/).filter(word => word.length > 0).length : 0;
+    const editWordCount = edited.bio.trim().split(/\s+/).filter(word => word.length > 0).length;
 
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
             <h2 className="text-2xl font-bold text-gray-800">Edit Registration</h2>
-            <button onClick={cancelEditRegistrant} className="text-gray-500 hover:text-gray-700">
+            <button onClick={cancelEdit} className="text-gray-500 hover:text-gray-700">
               <X className="w-6 h-6" />
             </button>
           </div>
@@ -1475,7 +1311,7 @@ const SalonDinners = () => {
                 <input
                   type="text"
                   value={edited.name}
-                  onChange={(e) => handleEditRegistrantChange('name', e.target.value)}
+                  onChange={(e) => handleEditChange('name', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1487,7 +1323,7 @@ const SalonDinners = () => {
                 <input
                   type="email"
                   value={edited.email}
-                  onChange={(e) => handleEditRegistrantChange('email', e.target.value)}
+                  onChange={(e) => handleEditChange('email', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1497,7 +1333,7 @@ const SalonDinners = () => {
                 <input
                   type="tel"
                   value={edited.phone || ''}
-                  onChange={(e) => handleEditRegistrantChange('phone', e.target.value)}
+                  onChange={(e) => handleEditChange('phone', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1507,7 +1343,7 @@ const SalonDinners = () => {
                 <input
                   type="text"
                   value={edited.professionalTitle || ''}
-                  onChange={(e) => handleEditRegistrantChange('professionalTitle', e.target.value)}
+                  onChange={(e) => handleEditChange('professionalTitle', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1525,7 +1361,7 @@ const SalonDinners = () => {
               <input
                 type="file"
                 accept="image/*"
-                onChange={handleEditRegistrantPictureUpload}
+                onChange={handleEditPictureUpload}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg"
               />
             </div>
@@ -1535,8 +1371,8 @@ const SalonDinners = () => {
                 Bio (250 words max) <span className="text-red-600">*</span>
               </label>
               <textarea
-                value={edited.bio || ''}
-                onChange={(e) => handleEditRegistrantChange('bio', e.target.value)}
+                value={edited.bio}
+                onChange={(e) => handleEditChange('bio', e.target.value)}
                 rows={6}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
@@ -1550,7 +1386,7 @@ const SalonDinners = () => {
               <input
                 type="text"
                 value={edited.foodAllergies || ''}
-                onChange={(e) => handleEditRegistrantChange('foodAllergies', e.target.value)}
+                onChange={(e) => handleEditChange('foodAllergies', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -1560,7 +1396,7 @@ const SalonDinners = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Event Date</label>
                 <select
                   value={edited.dateId}
-                  onChange={(e) => handleEditRegistrantChange('dateId', e.target.value)}
+                  onChange={(e) => handleEditChange('dateId', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   {eventDates.map(date => (
@@ -1575,7 +1411,7 @@ const SalonDinners = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Classification</label>
                 <select
                   value={edited.group}
-                  onChange={(e) => handleEditRegistrantChange('group', e.target.value)}
+                  onChange={(e) => handleEditChange('group', e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="liberal">Liberal</option>
@@ -1588,7 +1424,7 @@ const SalonDinners = () => {
 
           <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex space-x-3 border-t border-gray-200">
             <button
-              onClick={cancelEditRegistrant}
+              onClick={cancelEdit}
               className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
             >
               Cancel
@@ -1596,169 +1432,6 @@ const SalonDinners = () => {
             <button
               onClick={saveEditedRegistrant}
               className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-            >
-              Save Changes
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Edit Modal Component for Waitlist
-  const EditWaitlistModal = () => {
-    if (!editingWaitlistEntry) return null;
-
-    const { edited } = editingWaitlistEntry;
-    const editWordCount = edited.bio ? edited.bio.trim().split(/\s+/).filter(word => word.length > 0).length : 0;
-
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-        <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
-            <h2 className="text-2xl font-bold text-gray-800">Edit Waitlist Entry</h2>
-            <button onClick={cancelEditWaitlistEntry} className="text-gray-500 hover:text-gray-700">
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <div className="p-6 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Full Name <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={edited.name || ''}
-                  onChange={(e) => handleEditWaitlistChange('name', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Email <span className="text-red-600">*</span>
-                </label>
-                <input
-                  type="email"
-                  value={edited.email || ''}
-                  onChange={(e) => handleEditWaitlistChange('email', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                <input
-                  type="tel"
-                  value={edited.phone || ''}
-                  onChange={(e) => handleEditWaitlistChange('phone', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Professional Title</label>
-                <input
-                  type="text"
-                  value={edited.professionalTitle || ''}
-                  onChange={(e) => handleEditWaitlistChange('professionalTitle', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Picture {edited.picture && <span className="text-green-600">(Uploaded)</span>}
-              </label>
-              {edited.picture && (
-                <div className="mb-2">
-                  <img src={edited.picture} alt="Preview" className="w-24 h-24 rounded-full object-cover" />
-                </div>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleEditWaitlistPictureUpload}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Bio (250 words max) <span className="text-red-600">*</span>
-              </label>
-              <textarea
-                value={edited.bio || ''}
-                onChange={(e) => handleEditWaitlistChange('bio', e.target.value)}
-                rows={6}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <div className={`text-sm mt-1 ${editWordCount > 250 ? 'text-red-600' : 'text-gray-500'}`}>
-                {editWordCount}/250 words
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Food Allergies</label>
-              <input
-                type="text"
-                value={edited.foodAllergies || ''}
-                onChange={(e) => handleEditWaitlistChange('foodAllergies', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Classification</label>
-              <select
-                value={edited.classification || 'moderate'}
-                onChange={(e) => handleEditWaitlistChange('classification', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="liberal">Liberal</option>
-                <option value="moderate">Moderate</option>
-                <option value="conservative">Conservative</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Preferred Dates <span className="text-red-600">*</span>
-              </label>
-              <div className="space-y-2 border border-gray-200 rounded-lg p-3">
-                {eventDates.map((date) => (
-                  <label key={date.id} className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={(edited.preferredDates || []).includes(date.id)}
-                      onChange={() => handleEditWaitlistPreferredDateToggle(date.id)}
-                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">
-                      {date.label} - {date.location}
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {(!edited.preferredDates || edited.preferredDates.length === 0) && (
-                <p className="text-sm text-red-600 mt-1">Please select at least one preferred date</p>
-              )}
-            </div>
-          </div>
-
-          <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex space-x-3 border-t border-gray-200">
-            <button
-              onClick={cancelEditWaitlistEntry}
-              className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={saveEditedWaitlistEntry}
-              className="flex-1 bg-orange-600 text-white py-3 rounded-lg font-semibold hover:bg-orange-700 transition-colors"
             >
               Save Changes
             </button>
@@ -2234,7 +1907,7 @@ const SalonDinners = () => {
                 <div className="border border-blue-200 bg-blue-50 rounded-lg p-4">
                   <h5 className="font-semibold text-gray-800 mb-2">Make.com Webhook URL</h5>
                   <p className="text-sm text-gray-600 mb-3">
-                    All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen. Moves, edits, and deletions will also sync automatically.
+                    All registrations, waitlist entries, and invite requests will automatically send to this webhook in real-time as they happen. Moves and deletions will also sync automatically.
                   </p>
                   <input
                     type="text"
@@ -2244,26 +1917,38 @@ const SalonDinners = () => {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3"
                   />
                   <button
-                    onClick={() => {
-                      localStorage.setItem('make-webhook', makeWebhookUrl);
-                      setShowAlert({ message: 'Webhook URL saved! All new submissions will be sent automatically.', type: 'success' });
+                    onClick={async () => {
+                      try {
+                        const { error } = await supabase
+                          .from('settings')
+                          .upsert({ 
+                            key: 'make_webhook_url', 
+                            value: makeWebhookUrl 
+                          }, { 
+                            onConflict: 'key' 
+                          });
+                        
+                        if (error) throw error;
+                        setShowAlert({ message: 'Webhook URL saved to Supabase! All new submissions will be sent automatically.', type: 'success' });
+                      } catch (error) {
+                        console.error('Error saving webhook URL:', error);
+                        setShowAlert({ message: 'Error saving webhook URL: ' + error.message, type: 'error' });
+                      }
                     }}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 mb-3"
                   >
                     Save Webhook URL
                   </button>
                   <div className="bg-blue-100 rounded p-3 mb-3">
-                    <p className="text-xs text-blue-800 font-medium mb-2">✨ Auto-Sync Enabled:</p>
+                    <p className="text-xs text-blue-800 font-medium mb-2">âœ¨ Auto-Sync Enabled:</p>
                     <ul className="text-xs text-blue-700 space-y-1">
-                      <li>• New registrations → <code>type: "registrants", action: "new"</code></li>
-                      <li>• New waitlist signups → <code>type: "waitlist", action: "new"</code></li>
-                      <li>• Invite requests → <code>type: "invite", action: "new"</code></li>
-                      <li>• Edit registrant → <code>type: "registrants", action: "update"</code></li>
-                      <li>• Edit waitlist → <code>type: "waitlist", action: "update"</code></li>
-                      <li>• Move to waitlist → <code>type: "registrants", action: "move_to_waitlist"</code></li>
-                      <li>• Move to invite → <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
-                      <li>• Move to registrant → <code>type: "waitlist", action: "move_to_registrant"</code></li>
-                      <li>• Delete → <code>type: "registrants/waitlist", action: "delete"</code></li>
+                      <li>â€¢ New registrations â†’ <code>type: "registrants", action: "new"</code></li>
+                      <li>â€¢ New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
+                      <li>â€¢ Invite requests â†’ <code>type: "invite", action: "new"</code></li>
+                      <li>â€¢ Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>â€¢ Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>â€¢ Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>â€¢ Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -2296,14 +1981,13 @@ const SalonDinners = () => {
                     Your Make.com scenario needs to handle different action types:
                   </p>
                   <ol className="text-sm text-gray-700 space-y-2 list-decimal list-inside mb-4">
-                    <li>Create a <strong>Webhooks → Custom webhook</strong> trigger</li>
+                    <li>Create a <strong>Webhooks â†’ Custom webhook</strong> trigger</li>
                     <li>Add a <strong>Router</strong> module</li>
                     <li>Create routes for each action type:
                       <ul className="ml-6 mt-1 space-y-1 text-xs list-disc">
-                        <li><code>action = "new"</code> → Add Row to appropriate sheet</li>
-                        <li><code>action = "update"</code> → Search by email, Delete row, Add new row</li>
-                        <li><code>action = "move_to_*"</code> → Search & Delete from source, Add to destination</li>
-                        <li><code>action = "delete"</code> → Search & Delete from sheet</li>
+                        <li><code>action = "new"</code> â†’ Add Row to appropriate sheet</li>
+                        <li><code>action = "move_to_*"</code> â†’ Search & Delete from source, Add to destination</li>
+                        <li><code>action = "delete"</code> â†’ Search & Delete from sheet</li>
                       </ul>
                     </li>
                     <li>Use <strong>Google Sheets "Search Rows"</strong> to find by email</li>
@@ -2338,26 +2022,13 @@ const SalonDinners = () => {
                                   <p className="text-sm text-gray-600">{person.professionalTitle}</p>
                                 )}
                               </div>
-                              <div className="flex space-x-2 flex-shrink-0">
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    startEditWaitlistEntry(person, idx);
-                                  }}
-                                  className="text-blue-600 hover:text-blue-700 text-sm flex items-center"
-                                >
-                                  <Edit className="w-4 h-4 mr-1" />
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => setShowWaitlistRemoveOptions({ person, index: idx })}
-                                  className="text-red-600 hover:text-red-700 text-sm flex items-center"
-                                >
-                                  <Trash2 className="w-4 h-4 mr-1" />
-                                  Remove
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => setShowWaitlistRemoveOptions({ person, index: idx })}
+                                className="text-red-600 hover:text-red-700 text-sm flex items-center"
+                              >
+                                <Trash2 className="w-4 h-4 mr-1" />
+                                Remove
+                              </button>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-2">
                               <div><span className="font-medium">Email:</span> {person.email}</div>
@@ -2398,8 +2069,7 @@ const SalonDinners = () => {
         </div>
 
         {/* Modals */}
-        <EditRegistrantModal />
-        <EditWaitlistModal />
+        <EditModal />
         <RemoveOptionsModal />
         <WaitlistRemoveOptionsModal />
 
@@ -2522,7 +2192,7 @@ const SalonDinners = () => {
 
               <div className="prose prose-lg max-w-none text-gray-700 space-y-4 mb-8">
                 <p>
-                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwill—leaders, thinkers, and faithful stewards—to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
+                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwillâ€”leaders, thinkers, and faithful stewardsâ€”to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
                 </p>
                 
                 <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">A Space for Unity and Understanding</h3>
@@ -2571,16 +2241,16 @@ const SalonDinners = () => {
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">New York City</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>• March 19, 2026</li>
-                      <li>• May 22, 2026</li>
-                      <li>• October 23, 2026</li>
-                      <li>• December 8, 2026</li>
+                      <li>â€¢ March 19, 2026</li>
+                      <li>â€¢ May 22, 2026</li>
+                      <li>â€¢ October 23, 2026</li>
+                      <li>â€¢ December 8, 2026</li>
                     </ul>
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">Orange County</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>• August 19, 2026</li>
+                      <li>â€¢ August 19, 2026</li>
                     </ul>
                   </div>
                 </div>
@@ -3034,7 +2704,7 @@ const SalonDinners = () => {
                         {preferredDates.map(dateId => {
                           const date = eventDates.find(d => d.id === dateId);
                           return date ? (
-                            <li key={dateId}>• {date.label} - {date.location}</li>
+                            <li key={dateId}>â€¢ {date.label} - {date.location}</li>
                           ) : null;
                         })}
                       </ul>
@@ -3084,8 +2754,7 @@ const SalonDinners = () => {
       </div>
 
       {/* Modals */}
-      <EditRegistrantModal />
-      <EditWaitlistModal />
+      <EditModal />
       <RemoveOptionsModal />
       <WaitlistRemoveOptionsModal />
 
