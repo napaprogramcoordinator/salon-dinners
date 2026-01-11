@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
-import { supabase } from './supabaseClient';
+import { supabase } from '../lib/supabaseClient';
 
 const SalonDinners = () => {
   const [currentPage, setCurrentPage] = useState('public');
