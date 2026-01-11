@@ -1,4 +1,4 @@
-// Supabase Client Configuration
+// Supabase Client Configuration for Next.js
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = 'https://zqpawrdblhxllmfpygkk.supabase.co';
@@ -10,14 +10,5 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-// Helper function to handle Supabase errors
-export const handleSupabaseError = (error) => {
-  if (error) {
-    console.error('Supabase error:', error);
-    return {
-      success: false,
-      error: error.message || 'An unknown error occurred',
-    };
-  }
-  return { success: true };
-};
+// Default export for compatibility
+export default supabase;
