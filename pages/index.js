@@ -1941,14 +1941,14 @@ const SalonDinners = () => {
                   </button>
                   <div className="bg-blue-100 rounded p-3 mb-3">
                     <p className="text-xs text-blue-800 font-medium mb-2">âœ¨ Auto-Sync Enabled:</p>
-                    <ul className="text-xs text-blue-700 space-y-1">
-                      <li>â€¢ New registrations â†’ <code>type: "registrants", action: "new"</code></li>
-                      <li>â€¢ New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
-                      <li>â€¢ Invite requests â†’ <code>type: "invite", action: "new"</code></li>
-                      <li>â€¢ Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
-                      <li>â€¢ Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
-                      <li>â€¢ Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
-                      <li>â€¢ Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
+                    <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                      <li>New registrations â†’ <code>type: "registrants", action: "new"</code></li>
+                      <li>New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
+                      <li>Invite requests â†’ <code>type: "invite", action: "new"</code></li>
+                      <li>Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -2213,7 +2213,7 @@ const SalonDinners = () => {
                   Each Salon Dinner offers a warm and welcoming atmosphere in which guests are invited to reflect, connect, and collaborate. A typical evening includes:
                 </p>
                 <ul className="list-disc pl-6 space-y-1">
-                  <li>Mass</li>
+                  <li>Optional Mass</li>
                   <li>Holy Rosary</li>
                   <li>Reception and Fellowship</li>
                   <li>Dinner for an intimate group of attendees</li>
@@ -2240,17 +2240,17 @@ const SalonDinners = () => {
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">New York City</h4>
-                    <ul className="space-y-1 text-gray-600">
-                      <li>â€¢ March 19, 2026</li>
-                      <li>â€¢ May 22, 2026</li>
-                      <li>â€¢ October 23, 2026</li>
-                      <li>â€¢ December 8, 2026</li>
+                    <ul className="space-y-1 text-gray-600 list-disc list-inside">
+                      <li>March 19, 2026</li>
+                      <li>May 22, 2026</li>
+                      <li>October 23, 2026</li>
+                      <li>December 8, 2026</li>
                     </ul>
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">Orange County</h4>
-                    <ul className="space-y-1 text-gray-600">
-                      <li>â€¢ August 19, 2026</li>
+                    <ul className="space-y-1 text-gray-600 list-disc list-inside">
+                      <li>August 19, 2026</li>
                     </ul>
                   </div>
                 </div>
@@ -2704,7 +2704,7 @@ const SalonDinners = () => {
                         {preferredDates.map(dateId => {
                           const date = eventDates.find(d => d.id === dateId);
                           return date ? (
-                            <li key={dateId}>â€¢ {date.label} - {date.location}</li>
+                            <li key={dateId}>{date.label} - {date.location}</li>
                           ) : null;
                         })}
                       </ul>
