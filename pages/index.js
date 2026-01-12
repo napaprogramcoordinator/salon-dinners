@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client
+const supabaseUrl = 'https://zqpawrdblhxllmfpygkk.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxcGF3cmRibGh4bGxtZnB5Z2trIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4OTgyODQsImV4cCI6MjA4MzQ3NDI4NH0.qtekiX3TY-y6T5i1acSNwuXWwaiOL5OVtFbPEODKpvs';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 
 const SalonDinners = () => {
   const [currentPage, setCurrentPage] = useState('public');
@@ -46,6 +53,64 @@ const SalonDinners = () => {
   const ADMIN_PASSWORD = 'salon2026';
 
   // Scroll to top whenever step changes
+
+  // ============================================
+  // SUPABASE HELPER FUNCTIONS
+  // ============================================
+  
+  // Convert Supabase data to app format
+  const convertSupabaseToAppFormat = (supabaseData) => {
+    const formatted = {};
+    
+    // Initialize empty structure
+    eventDates.forEach(date => {
+      formatted[date.id] = { liberal: [], moderate: [], conservative: [] };
+    });
+    
+    // Fill with actual data
+    supabaseData.forEach(row => {
+      // Find the date ID from the label
+      const dateInfo = eventDates.find(d => d.label === row.event_date);
+      const dateId = dateInfo ? dateInfo.id : 'date1';
+      
+      const classification = (row.classification || 'moderate').toLowerCase();
+      
+      if (formatted[dateId] && formatted[dateId][classification]) {
+        formatted[dateId][classification].push({
+          name: row.name,
+          email: row.email,
+          phone: row.phone || '',
+          professionalTitle: row.professional_title || '',
+          bio: row.bio || '',
+          foodAllergies: row.food_allergies || '',
+          picture: row.photo_link || '',
+          timestamp: row.registration_date || row.created_at
+        });
+      }
+    });
+    
+    return formatted;
+  };
+
+  // Convert app format to Supabase row
+  const convertAppToSupabaseRow = (person, dateId, classification) => {
+    const dateInfo = eventDates.find(d => d.id === dateId);
+    
+    return {
+      name: person.name,
+      email: person.email,
+      phone: person.phone || null,
+      professional_title: person.professionalTitle || null,
+      bio: person.bio || null,
+      food_allergies: person.foodAllergies || null,
+      event_date: dateInfo?.label || '',
+      location: dateInfo?.location || '',
+      classification: classification,
+      registration_date: person.timestamp || new Date().toISOString(),
+      photo_link: person.picture || null
+    };
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -87,27 +152,41 @@ const SalonDinners = () => {
     }
   }, []);
 
-  const loadInviteList = () => {
+  const loadInviteList = async () => {
     if (typeof window === 'undefined') return;
     try {
-      const result = localStorage.getItem('invite-list');
-      if (result) {
-        setInviteList(JSON.parse(result));
-      }
+      const { data, error } = await supabase.from('invites').select('*').order('created_at', { ascending: true });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const formatted = data.map(row => ({ name: row.name, email: row.email, timestamp: row.request_date || row.created_at }));
+        setInviteList(formatted);
+        try { localStorage.setItem('invite-list', JSON.stringify(formatted)); } catch (e) {}
+      } else { setInviteList([]); }
     } catch (error) {
       console.error('Error loading invite list:', error);
+      try { const result = localStorage.getItem('invite-list'); if (result) setInviteList(JSON.parse(result)); } catch (e) {}
     }
   };
 
   const loadWaitlistData = async () => {
     if (typeof window === 'undefined') return;
     try {
-      const result = localStorage.getItem('waitlist');
-      if (result) {
-        setWaitlistData(JSON.parse(result));
-      }
+      const { data, error } = await supabase.from('waitlist').select('*').order('created_at', { ascending: true });
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const formatted = data.map(row => ({
+          name: row.name, email: row.email, phone: row.phone || '', professionalTitle: row.professional_title || '',
+          bio: row.bio || '', foodAllergies: row.food_allergies || '', picture: row.photo_link || '',
+          classification: row.classification || '',
+          preferredDates: row.preferred_dates ? (typeof row.preferred_dates === 'string' ? row.preferred_dates.split(',').map(d => d.trim()) : row.preferred_dates) : [],
+          timestamp: row.added_to_waitlist || row.created_at
+        }));
+        setWaitlistData(formatted);
+        try { localStorage.setItem('waitlist', JSON.stringify(formatted)); } catch (e) {}
+      } else { setWaitlistData([]); }
     } catch (error) {
       console.error('Error loading waitlist:', error);
+      try { const result = localStorage.getItem('waitlist'); if (result) setWaitlistData(JSON.parse(result)); } catch (e) {}
     }
   };
 
@@ -116,31 +195,69 @@ const SalonDinners = () => {
       setLoading(false);
       return;
     }
+    
     try {
-      const result = localStorage.getItem('salon-registrations');
-      if (result) {
-        setRegistrations(JSON.parse(result));
+      console.log('Loading registrations from Supabase...');
+      
+      // Load from Supabase
+      const { data, error } = await supabase
+        .from('registrations')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+      
+      console.log(`Loaded ${data.length} registrations from Supabase`);
+      
+      if (data && data.length > 0) {
+        const formatted = convertSupabaseToAppFormat(data);
+        setRegistrations(formatted);
+        
+        // Also save to localStorage as backup
+        try {
+          localStorage.setItem('salon-registrations', JSON.stringify(formatted));
+        } catch (e) {
+          console.warn('Could not save to localStorage:', e);
+        }
       } else {
+        // No data in Supabase, initialize empty structure
         const initialData = {};
         eventDates.forEach(date => {
           initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
         });
         setRegistrations(initialData);
-        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
       }
     } catch (error) {
-      const initialData = {};
-      eventDates.forEach(date => {
-        initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
-      });
-      setRegistrations(initialData);
+      console.error('Error loading from Supabase:', error);
+      
+      // Fallback to localStorage
       try {
-        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
-      } catch (e) {
-        console.error('Error saving initial data:', e);
+        const result = localStorage.getItem('salon-registrations');
+        if (result) {
+          console.log('Loaded from localStorage fallback');
+          setRegistrations(JSON.parse(result));
+        } else {
+          const initialData = {};
+          eventDates.forEach(date => {
+            initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+          });
+          setRegistrations(initialData);
+        }
+      } catch (localError) {
+        console.error('localStorage fallback failed:', localError);
+        const initialData = {};
+        eventDates.forEach(date => {
+          initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+        });
+        setRegistrations(initialData);
       }
     }
     setLoading(false);
+  };
+
   };
 
   // ============================================
