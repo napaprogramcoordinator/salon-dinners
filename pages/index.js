@@ -1040,14 +1040,26 @@ const SalonDinners = () => {
 
   const sendToMake = async () => {
     if (!makeWebhookUrl) {
-      setShowAlert({ message: 'Please enter your Make.com webhook URL first', type: 'error' });
+      setShowAlert({ message: 'Please enter your webhook URL first', type: 'error' });
       return;
     }
+    
     try {
       const allData = getAllRegistrants();
+      
+      if (allData.length === 0) {
+        setShowAlert({ message: 'No registrants to export', type: 'error' });
+        return;
+      }
+      
+      console.log('Sending to webhook:', makeWebhookUrl);
+      console.log('Data count:', allData.length);
+      
       const response = await fetch(makeWebhookUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
           type: 'registrants',
           action: 'bulk_export',
@@ -1056,25 +1068,68 @@ const SalonDinners = () => {
           totalCount: allData.length
         })
       });
-      if (response.ok) {
-        setShowAlert({ message: 'Successfully sent registrants to Make.com! Check your Google Sheet.', type: 'success' });
-      } else {
-        setShowAlert({ message: 'Error sending to Make.com. Please check your webhook URL.', type: 'error' });
+      
+      console.log('Response status:', response.status);
+      
+      const responseText = await response.text();
+      console.log('Response body:', responseText);
+      
+      try {
+        const responseData = JSON.parse(responseText);
+        if (responseData.success) {
+          setShowAlert({ 
+            message: `Successfully exported ${allData.length} registrants! Check your Google Sheet.`, 
+            type: 'success' 
+          });
+        } else {
+          setShowAlert({ 
+            message: `Export failed: ${responseData.error || 'Unknown error'}`, 
+            type: 'error' 
+          });
+        }
+      } catch (e) {
+        if (response.ok) {
+          setShowAlert({ 
+            message: `Exported ${allData.length} registrants! Check your Google Sheet.`, 
+            type: 'success' 
+          });
+        } else {
+          setShowAlert({ 
+            message: 'Export may have failed. Check the browser console and Google Sheet.', 
+            type: 'error' 
+          });
+        }
       }
+      
     } catch (error) {
-      setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
+      console.error('Fetch error:', error);
+      setShowAlert({ 
+        message: `Network error: ${error.message}. Make sure your webhook URL is correct and the script is deployed.`, 
+        type: 'error' 
+      });
     }
   };
 
   const sendWaitlistToMake = async () => {
     if (!makeWebhookUrl) {
-      setShowAlert({ message: 'Please enter your Make.com webhook URL first', type: 'error' });
+      setShowAlert({ message: 'Please enter your webhook URL first', type: 'error' });
       return;
     }
+    
     try {
+      if (waitlistData.length === 0) {
+        setShowAlert({ message: 'No waitlist entries to export', type: 'error' });
+        return;
+      }
+      
+      console.log('Sending waitlist to webhook:', makeWebhookUrl);
+      console.log('Data count:', waitlistData.length);
+      
       const response = await fetch(makeWebhookUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({
           type: 'waitlist',
           action: 'bulk_export',
@@ -1083,13 +1138,45 @@ const SalonDinners = () => {
           totalCount: waitlistData.length
         })
       });
-      if (response.ok) {
-        setShowAlert({ message: 'Successfully sent waitlist to Make.com! Check your Google Sheet.', type: 'success' });
-      } else {
-        setShowAlert({ message: 'Error sending waitlist to Make.com. Please check your webhook URL.', type: 'error' });
+      
+      console.log('Response status:', response.status);
+      
+      const responseText = await response.text();
+      console.log('Response body:', responseText);
+      
+      try {
+        const responseData = JSON.parse(responseText);
+        if (responseData.success) {
+          setShowAlert({ 
+            message: `Successfully exported ${waitlistData.length} waitlist entries! Check your Google Sheet.`, 
+            type: 'success' 
+          });
+        } else {
+          setShowAlert({ 
+            message: `Export failed: ${responseData.error || 'Unknown error'}`, 
+            type: 'error' 
+          });
+        }
+      } catch (e) {
+        if (response.ok) {
+          setShowAlert({ 
+            message: `Exported ${waitlistData.length} waitlist entries! Check your Google Sheet.`, 
+            type: 'success' 
+          });
+        } else {
+          setShowAlert({ 
+            message: 'Export may have failed. Check the browser console and Google Sheet.', 
+            type: 'error' 
+          });
+        }
       }
+      
     } catch (error) {
-      setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
+      console.error('Fetch error:', error);
+      setShowAlert({ 
+        message: `Network error: ${error.message}. Make sure your webhook URL is correct.`, 
+        type: 'error' 
+      });
     }
   };
 
@@ -2192,7 +2279,7 @@ const SalonDinners = () => {
 
               <div className="prose prose-lg max-w-none text-gray-700 space-y-4 mb-8">
                 <p>
-                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwill, leaders, thinkers, and faithful stewards, to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
+                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwillâ€”leaders, thinkers, and faithful stewardsâ€”to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
                 </p>
                 
                 <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">A Space for Unity and Understanding</h3>
