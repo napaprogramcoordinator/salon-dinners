@@ -18,6 +18,7 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 // Helper: Save to Supabase using REST API
 async function saveToSupabase(table, data) {
   try {
+    console.log(`Attempting to save to Supabase ${table}:`, JSON.stringify(data));
     const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: 'POST',
       headers: {
@@ -30,7 +31,8 @@ async function saveToSupabase(table, data) {
     });
     
     if (!response.ok) {
-      console.error(`Supabase ${table} error:`, response.statusText);
+      const errorText = await response.text();
+      console.error(`Supabase ${table} error (${response.status}):`, errorText);
     } else {
       console.log(`✅ Saved to Supabase ${table}`);
     }
@@ -42,6 +44,7 @@ async function saveToSupabase(table, data) {
 // Helper: Delete from Supabase using REST API
 async function deleteFromSupabase(table, email) {
   try {
+    console.log(`Attempting to delete from Supabase ${table} where email=${email}`);
     const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?email=eq.${encodeURIComponent(email)}`, {
       method: 'DELETE',
       headers: {
@@ -51,7 +54,8 @@ async function deleteFromSupabase(table, email) {
     });
     
     if (!response.ok) {
-      console.error(`Supabase delete ${table} error:`, response.statusText);
+      const errorText = await response.text();
+      console.error(`Supabase delete ${table} error (${response.status}):`, errorText);
     } else {
       console.log(`✅ Deleted from Supabase ${table}`);
     }
