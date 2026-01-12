@@ -2300,7 +2300,7 @@ const SalonDinners = () => {
                   Each Salon Dinner offers a warm and welcoming atmosphere in which guests are invited to reflect, connect, and collaborate. A typical evening includes:
                 </p>
                 <ul className="list-disc pl-6 space-y-1">
-                  <li>Optional Mass</li>
+                  <li>Mass</li>
                   <li>Holy Rosary</li>
                   <li>Reception and Fellowship</li>
                   <li>Dinner for an intimate group of attendees</li>
