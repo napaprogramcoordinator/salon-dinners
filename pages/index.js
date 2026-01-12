@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
 
+// Supabase configuration for loading data
+const SUPABASE_URL = 'https://zqpawrdblhxllmfpygkk.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxcGF3cmRibGh4bGxtZnB5Z2trIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4OTgyODQsImV4cCI6MjA4MzQ3NDI4NH0.qtekiX3TY-y6T5i1acSNwuXWwaiOL5OVtFbPEODKpvs';
+
 const SalonDinners = () => {
   const [currentPage, setCurrentPage] = useState('public');
   const [step, setStep] = useState('landing');
@@ -116,28 +120,105 @@ const SalonDinners = () => {
       setLoading(false);
       return;
     }
+    
     try {
-      const result = localStorage.getItem('salon-registrations');
-      if (result) {
-        setRegistrations(JSON.parse(result));
+      console.log('Loading registrations from Supabase...');
+      
+      // Load from Supabase using REST API
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/registrations?select=*`, {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to load from Supabase');
+      }
+      
+      const data = await response.json();
+      console.log(`Loaded ${data.length} registrations from Supabase`);
+      
+      if (data && data.length > 0) {
+        // Convert Supabase format to app format
+        const formatted = {};
+        eventDates.forEach(date => {
+          formatted[date.id] = { liberal: [], moderate: [], conservative: [] };
+        });
+        
+        data.forEach(row => {
+          // Find the date ID from the label
+          const dateInfo = eventDates.find(d => d.label === row.event_date);
+          const dateId = dateInfo ? dateInfo.id : 'date1';
+          
+          const classification = (row.classification || 'moderate').toLowerCase();
+          
+          if (formatted[dateId] && formatted[dateId][classification]) {
+            formatted[dateId][classification].push({
+              name: row.name,
+              email: row.email,
+              phone: row.phone || '',
+              professionalTitle: row.professional_title || '',
+              bio: row.bio || '',
+              foodAllergies: row.food_allergies || '',
+              picture: row.photo_link || '',
+              timestamp: row.registration_date || row.created_at
+            });
+          }
+        });
+        
+        setRegistrations(formatted);
+        
+        // Also save to localStorage as backup
+        try {
+          localStorage.setItem('salon-registrations', JSON.stringify(formatted));
+        } catch (e) {
+          console.warn('Could not save to localStorage:', e);
+        }
       } else {
+        // No data in Supabase, try localStorage
+        try {
+          const result = localStorage.getItem('salon-registrations');
+          if (result) {
+            setRegistrations(JSON.parse(result));
+          } else {
+            const initialData = {};
+            eventDates.forEach(date => {
+              initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+            });
+            setRegistrations(initialData);
+          }
+        } catch (e) {
+          const initialData = {};
+          eventDates.forEach(date => {
+            initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+          });
+          setRegistrations(initialData);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading from Supabase:', error);
+      
+      // Fallback to localStorage
+      try {
+        const result = localStorage.getItem('salon-registrations');
+        if (result) {
+          console.log('Loaded from localStorage fallback');
+          setRegistrations(JSON.parse(result));
+        } else {
+          const initialData = {};
+          eventDates.forEach(date => {
+            initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+          });
+          setRegistrations(initialData);
+        }
+      } catch (localError) {
+        console.error('localStorage fallback failed:', localError);
         const initialData = {};
         eventDates.forEach(date => {
           initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
         });
         setRegistrations(initialData);
-        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
-      }
-    } catch (error) {
-      const initialData = {};
-      eventDates.forEach(date => {
-        initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
-      });
-      setRegistrations(initialData);
-      try {
-        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
-      } catch (e) {
-        console.error('Error saving initial data:', e);
       }
     }
     setLoading(false);
@@ -1865,13 +1946,13 @@ const SalonDinners = () => {
                   <div className="bg-blue-100 rounded p-3 mb-3">
                     <p className="text-xs text-blue-800 font-medium mb-2">âœ¨ Auto-Sync Enabled:</p>
                     <ul className="text-xs text-blue-700 space-y-1">
-                      <li>â€¢ New registrations â†’ <code>type: "registrants", action: "new"</code></li>
-                      <li>â€¢ New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
-                      <li>â€¢ Invite requests â†’ <code>type: "invite", action: "new"</code></li>
-                      <li>â€¢ Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
-                      <li>â€¢ Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
-                      <li>â€¢ Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
-                      <li>â€¢ Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
+                      <li>• New registrations â†’ <code>type: "registrants", action: "new"</code></li>
+                      <li>• New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
+                      <li>• Invite requests â†’ <code>type: "invite", action: "new"</code></li>
+                      <li>• Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>• Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>• Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>• Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -2164,16 +2245,16 @@ const SalonDinners = () => {
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">New York City</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>â€¢ March 19, 2026</li>
-                      <li>â€¢ May 22, 2026</li>
-                      <li>â€¢ October 23, 2026</li>
-                      <li>â€¢ December 8, 2026</li>
+                      <li>• March 19, 2026</li>
+                      <li>• May 22, 2026</li>
+                      <li>• October 23, 2026</li>
+                      <li>• December 8, 2026</li>
                     </ul>
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">Orange County</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>â€¢ August 19, 2026</li>
+                      <li>• August 19, 2026</li>
                     </ul>
                   </div>
                 </div>
@@ -2627,7 +2708,7 @@ const SalonDinners = () => {
                         {preferredDates.map(dateId => {
                           const date = eventDates.find(d => d.id === dateId);
                           return date ? (
-                            <li key={dateId}>â€¢ {date.label} - {date.location}</li>
+                            <li key={dateId}>• {date.label} - {date.location}</li>
                           ) : null;
                         })}
                       </ul>
