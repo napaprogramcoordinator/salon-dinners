@@ -350,7 +350,8 @@ async function uploadPhotoToDrive(drive, base64Data, name, email) {
       media: {
         mimeType: 'image/jpeg',
         body: stream
-      }
+      },
+      supportsAllDrives: true
     });
     
     // Make file publicly accessible
@@ -359,7 +360,8 @@ async function uploadPhotoToDrive(drive, base64Data, name, email) {
       requestBody: {
         role: 'reader',
         type: 'anyone'
-      }
+      },
+      supportsAllDrives: true
     });
     
     // Return download link
