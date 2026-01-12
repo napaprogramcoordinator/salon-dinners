@@ -188,7 +188,11 @@ async function handleRegistrants(sheets, action, items) {
       await saveToSupabase('invites', {
         name: item.name,
         email: item.email,
-        request_date: item.timestamp || new Date().toISOString()
+        timestamp: item.timestamp || new Date().toISOString(),
+        moved_from_registration: true,
+        moved_from_waitlist: false,
+        original_date: item.originalDate || null,
+        original_location: item.originalLocation || null
       });
       
       await appendRows(sheets, 'Invites', [[item.name || '', item.email || '', formatDate(item.timestamp)]]);
@@ -271,7 +275,11 @@ async function handleWaitlist(sheets, action, items) {
       await saveToSupabase('invites', {
         name: item.name,
         email: item.email,
-        request_date: item.timestamp || new Date().toISOString()
+        timestamp: item.timestamp || new Date().toISOString(),
+        moved_from_waitlist: true,
+        moved_from_registration: false,
+        original_date: null,
+        original_location: null
       });
       
       await appendRows(sheets, 'Invites', [[item.name || '', item.email || '', formatDate(item.timestamp)]]);
