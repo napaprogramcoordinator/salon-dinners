@@ -5,7 +5,7 @@
 import { google } from 'googleapis';
 
 // Your Google Sheets configuration
-const SPREADSHEET_ID = '1_ey_NmF7pQWtPyYO4TvvNamDOe_nQCCAnYku83CbDsI'; // Get from Google Sheets URL
+const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
 const GOOGLE_DRIVE_FOLDER_ID = '1sfGf7XMBgmpvayoXHwc5-04igwwjVOdY';
 
 // Google Service Account credentials (you'll need to set these)
@@ -25,6 +25,20 @@ export default async function handler(req, res) {
 
     const { type, action, data } = req.body;
 
+    // Validate environment variables
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_EMAIL not set');
+    }
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY not set');
+    }
+    if (!process.env.GOOGLE_SPREADSHEET_ID) {
+      throw new Error('GOOGLE_SPREADSHEET_ID not set');
+    }
+
+    console.log('Environment variables validated');
+    console.log('Spreadsheet ID:', process.env.GOOGLE_SPREADSHEET_ID);
+
     // Authenticate with Google
     const auth = new google.auth.GoogleAuth({
       credentials: GOOGLE_CREDENTIALS,
@@ -36,6 +50,8 @@ export default async function handler(req, res) {
 
     const sheets = google.sheets({ version: 'v4', auth });
     const drive = google.drive({ version: 'v3', auth });
+
+    console.log('Google auth initialized');
 
     // Route to appropriate handler
     if (type === 'registrants') {
