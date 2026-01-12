@@ -571,7 +571,7 @@ const SalonDinners = () => {
             
             let width = img.width;
             let height = img.height;
-            const maxSize = 400;
+            const maxSize = 1200; // Increased for better quality
             
             if (width > height) {
               if (width > maxSize) {
@@ -591,7 +591,7 @@ const SalonDinners = () => {
             console.log('Resizing to:', width, 'x', height);
             
             ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92) // Higher quality;
             
             console.log(`Image compressed: Original ${(file.size / 1024).toFixed(1)}KB -> Compressed ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
             
@@ -1070,7 +1070,7 @@ const SalonDinners = () => {
           
           let width = img.width;
           let height = img.height;
-          const maxSize = 400;
+          const maxSize = 1200; // Increased for better quality
           
           if (width > height) {
             if (width > maxSize) {
@@ -1087,7 +1087,7 @@ const SalonDinners = () => {
           canvas.width = width;
           canvas.height = height;
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92) // Higher quality;
           
           console.log(`Edit image compressed: ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
           
@@ -1918,13 +1918,13 @@ const SalonDinners = () => {
                   <div className="bg-blue-100 rounded p-3 mb-3">
                     <p className="text-xs text-blue-800 font-medium mb-2">âœ¨ Auto-Sync Enabled:</p>
                     <ul className="text-xs text-blue-700 space-y-1">
-                      <li>â€¢ New registrations â†’ <code>type: "registrants", action: "new"</code></li>
-                      <li>â€¢ New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
-                      <li>â€¢ Invite requests â†’ <code>type: "invite", action: "new"</code></li>
-                      <li>â€¢ Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
-                      <li>â€¢ Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
-                      <li>â€¢ Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
-                      <li>â€¢ Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
+                      <li>• New registrations → <code>type: "registrants", action: "new"</code></li>
+                      <li>• New waitlist signups → <code>type: "waitlist", action: "new"</code></li>
+                      <li>• Invite requests → <code>type: "invite", action: "new"</code></li>
+                      <li>• Move to waitlist → <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>• Move to invite → <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>• Move to registrant → <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>• Delete → <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -2168,7 +2168,7 @@ const SalonDinners = () => {
 
               <div className="prose prose-lg max-w-none text-gray-700 space-y-4 mb-8">
                 <p>
-                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwillâ€”leaders, thinkers, and faithful stewardsâ€”to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
+                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwill—leaders, thinkers, and faithful stewards—to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
                 </p>
                 
                 <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">A Space for Unity and Understanding</h3>
@@ -2217,16 +2217,16 @@ const SalonDinners = () => {
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">New York City</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>â€¢ March 19, 2026</li>
-                      <li>â€¢ May 22, 2026</li>
-                      <li>â€¢ October 23, 2026</li>
-                      <li>â€¢ December 8, 2026</li>
+                      <li>• March 19, 2026</li>
+                      <li>• May 22, 2026</li>
+                      <li>• October 23, 2026</li>
+                      <li>• December 8, 2026</li>
                     </ul>
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">Orange County</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>â€¢ August 19, 2026</li>
+                      <li>• August 19, 2026</li>
                     </ul>
                   </div>
                 </div>
@@ -2680,7 +2680,7 @@ const SalonDinners = () => {
                         {preferredDates.map(dateId => {
                           const date = eventDates.find(d => d.id === dateId);
                           return date ? (
-                            <li key={dateId}>â€¢ {date.label} - {date.location}</li>
+                            <li key={dateId}>• {date.label} - {date.location}</li>
                           ) : null;
                         })}
                       </ul>
