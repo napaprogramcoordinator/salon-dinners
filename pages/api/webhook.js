@@ -170,7 +170,7 @@ async function handleRegistrants(sheets, action, items) {
         classification: item.classification || null,
         preferred_dates: preferredDatesStr,
         added_to_waitlist: new Date().toISOString(),
-        photo_link: photoLink || null
+        picture: photoLink || null  // FIXED: was photo_link
       });
       
       await appendRows(sheets, 'Waitlist', [[
@@ -220,7 +220,7 @@ async function handleWaitlist(sheets, action, items) {
         classification: item.classification || null,
         preferred_dates: preferredDatesStr,
         added_to_waitlist: new Date().toISOString(),
-        photo_link: photoLink || null
+        picture: photoLink || null  // FIXED: was photo_link
       });
       
       return [
@@ -293,7 +293,11 @@ async function handleInvites(sheets, action, items) {
       saveToSupabase('invites', {
         name: item.name,
         email: item.email,
-        request_date: item.timestamp || new Date().toISOString()
+        timestamp: item.timestamp || new Date().toISOString(),
+        moved_from_registration: item.movedFromRegistration || false,
+        moved_from_waitlist: item.movedFromWaitlist || false,
+        original_date: item.originalDate || null,
+        original_location: item.originalLocation || null
       });
       
       return [item.name || '', item.email || '', formatDate(item.timestamp)];
