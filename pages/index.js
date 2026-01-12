@@ -1,15 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
-
 
 const SalonDinners = () => {
-  // Initialize Supabase client
-  const supabase = createClient(
-    'https://zqpawrdblhxllmfpygkk.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpxcGF3cmRibGh4bGxtZnB5Z2trIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4OTgyODQsImV4cCI6MjA4MzQ3NDI4NH0.qtekiX3TY-y6T5i1acSNwuXWwaiOL5OVtFbPEODKpvs'
-  );
-
   const [currentPage, setCurrentPage] = useState('public');
   const [step, setStep] = useState('landing');
   const [formData, setFormData] = useState({
@@ -54,64 +46,6 @@ const SalonDinners = () => {
   const ADMIN_PASSWORD = 'salon2026';
 
   // Scroll to top whenever step changes
-
-  // ============================================
-  // SUPABASE HELPER FUNCTIONS
-  // ============================================
-  
-  // Convert Supabase data to app format
-  const convertSupabaseToAppFormat = (supabaseData) => {
-    const formatted = {};
-    
-    // Initialize empty structure
-    eventDates.forEach(date => {
-      formatted[date.id] = { liberal: [], moderate: [], conservative: [] };
-    });
-    
-    // Fill with actual data
-    supabaseData.forEach(row => {
-      // Find the date ID from the label
-      const dateInfo = eventDates.find(d => d.label === row.event_date);
-      const dateId = dateInfo ? dateInfo.id : 'date1';
-      
-      const classification = (row.classification || 'moderate').toLowerCase();
-      
-      if (formatted[dateId] && formatted[dateId][classification]) {
-        formatted[dateId][classification].push({
-          name: row.name,
-          email: row.email,
-          phone: row.phone || '',
-          professionalTitle: row.professional_title || '',
-          bio: row.bio || '',
-          foodAllergies: row.food_allergies || '',
-          picture: row.photo_link || '',
-          timestamp: row.registration_date || row.created_at
-        });
-      }
-    });
-    
-    return formatted;
-  };
-
-  // Convert app format to Supabase row
-  const convertAppToSupabaseRow = (person, dateId, classification) => {
-    const dateInfo = eventDates.find(d => d.id === dateId);
-    
-    return {
-      name: person.name,
-      email: person.email,
-      phone: person.phone || null,
-      professional_title: person.professionalTitle || null,
-      bio: person.bio || null,
-      food_allergies: person.foodAllergies || null,
-      event_date: dateInfo?.label || '',
-      location: dateInfo?.location || '',
-      classification: classification,
-      registration_date: person.timestamp || new Date().toISOString(),
-      photo_link: person.picture || null
-    };
-  };
-
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -153,41 +87,27 @@ const SalonDinners = () => {
     }
   }, []);
 
-  const loadInviteList = async () => {
+  const loadInviteList = () => {
     if (typeof window === 'undefined') return;
     try {
-      const { data, error } = await supabase.from('invites').select('*').order('created_at', { ascending: true });
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const formatted = data.map(row => ({ name: row.name, email: row.email, timestamp: row.request_date || row.created_at }));
-        setInviteList(formatted);
-        try { localStorage.setItem('invite-list', JSON.stringify(formatted)); } catch (e) {}
-      } else { setInviteList([]); }
+      const result = localStorage.getItem('invite-list');
+      if (result) {
+        setInviteList(JSON.parse(result));
+      }
     } catch (error) {
       console.error('Error loading invite list:', error);
-      try { const result = localStorage.getItem('invite-list'); if (result) setInviteList(JSON.parse(result)); } catch (e) {}
     }
   };
 
   const loadWaitlistData = async () => {
     if (typeof window === 'undefined') return;
     try {
-      const { data, error } = await supabase.from('waitlist').select('*').order('created_at', { ascending: true });
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const formatted = data.map(row => ({
-          name: row.name, email: row.email, phone: row.phone || '', professionalTitle: row.professional_title || '',
-          bio: row.bio || '', foodAllergies: row.food_allergies || '', picture: row.photo_link || '',
-          classification: row.classification || '',
-          preferredDates: row.preferred_dates ? (typeof row.preferred_dates === 'string' ? row.preferred_dates.split(',').map(d => d.trim()) : row.preferred_dates) : [],
-          timestamp: row.added_to_waitlist || row.created_at
-        }));
-        setWaitlistData(formatted);
-        try { localStorage.setItem('waitlist', JSON.stringify(formatted)); } catch (e) {}
-      } else { setWaitlistData([]); }
+      const result = localStorage.getItem('waitlist');
+      if (result) {
+        setWaitlistData(JSON.parse(result));
+      }
     } catch (error) {
       console.error('Error loading waitlist:', error);
-      try { const result = localStorage.getItem('waitlist'); if (result) setWaitlistData(JSON.parse(result)); } catch (e) {}
     }
   };
 
@@ -196,69 +116,31 @@ const SalonDinners = () => {
       setLoading(false);
       return;
     }
-    
     try {
-      console.log('Loading registrations from Supabase...');
-      
-      // Load from Supabase
-      const { data, error } = await supabase
-        .from('registrations')
-        .select('*')
-        .order('created_at', { ascending: true });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-      
-      console.log(`Loaded ${data.length} registrations from Supabase`);
-      
-      if (data && data.length > 0) {
-        const formatted = convertSupabaseToAppFormat(data);
-        setRegistrations(formatted);
-        
-        // Also save to localStorage as backup
-        try {
-          localStorage.setItem('salon-registrations', JSON.stringify(formatted));
-        } catch (e) {
-          console.warn('Could not save to localStorage:', e);
-        }
+      const result = localStorage.getItem('salon-registrations');
+      if (result) {
+        setRegistrations(JSON.parse(result));
       } else {
-        // No data in Supabase, initialize empty structure
         const initialData = {};
         eventDates.forEach(date => {
           initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
         });
         setRegistrations(initialData);
+        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
       }
     } catch (error) {
-      console.error('Error loading from Supabase:', error);
-      
-      // Fallback to localStorage
+      const initialData = {};
+      eventDates.forEach(date => {
+        initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
+      });
+      setRegistrations(initialData);
       try {
-        const result = localStorage.getItem('salon-registrations');
-        if (result) {
-          console.log('Loaded from localStorage fallback');
-          setRegistrations(JSON.parse(result));
-        } else {
-          const initialData = {};
-          eventDates.forEach(date => {
-            initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
-          });
-          setRegistrations(initialData);
-        }
-      } catch (localError) {
-        console.error('localStorage fallback failed:', localError);
-        const initialData = {};
-        eventDates.forEach(date => {
-          initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
-        });
-        setRegistrations(initialData);
+        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
+      } catch (e) {
+        console.error('Error saving initial data:', e);
       }
     }
     setLoading(false);
-  };
-
   };
 
   // ============================================
@@ -709,7 +591,7 @@ const SalonDinners = () => {
             console.log('Resizing to:', width, 'x', height);
             
             ctx.drawImage(img, 0, 0, width, height);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92) // Higher quality;
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92); // Higher quality
             
             console.log(`Image compressed: Original ${(file.size / 1024).toFixed(1)}KB -> Compressed ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
             
@@ -1205,7 +1087,7 @@ const SalonDinners = () => {
           canvas.width = width;
           canvas.height = height;
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92) // Higher quality;
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.92); // Higher quality
           
           console.log(`Edit image compressed: ${(compressedDataUrl.length * 0.75 / 1024).toFixed(1)}KB`);
           
@@ -1238,7 +1120,7 @@ const SalonDinners = () => {
     if (originalIndex !== -1) {
       updatedRegistrations[original.dateId][original.group].splice(originalIndex, 1);
       
-      const updatedRegistrant = {
+      updatedRegistrations[edited.dateId][edited.group].push({
         name: edited.name,
         email: edited.email,
         phone: edited.phone,
@@ -1247,9 +1129,7 @@ const SalonDinners = () => {
         foodAllergies: edited.foodAllergies,
         picture: edited.picture,
         timestamp: original.timestamp
-      };
-      
-      updatedRegistrations[edited.dateId][edited.group].push(updatedRegistrant);
+      });
       
       try {
         localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
@@ -1258,63 +1138,12 @@ const SalonDinners = () => {
       }
       setRegistrations(updatedRegistrations);
       setEditingRegistrant(null);
-      
-      // Send webhook to update Google Sheets
-      if (makeWebhookUrl) {
-        try {
-          const dateInfo = eventDates.find(d => d.id === edited.dateId);
-          
-          // First, delete the old entry
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'registrants',
-              action: 'delete',
-              data: [{
-                email: original.email,
-                name: original.name,
-                dateId: original.dateId,
-                date: eventDates.find(d => d.id === original.dateId)?.label,
-                group: original.group
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-          
-          // Then, add the updated entry
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'registrants',
-              action: 'new',
-              data: [{
-                ...updatedRegistrant,
-                date: dateInfo?.label,
-                location: dateInfo?.location,
-                dateId: edited.dateId,
-                group: edited.group
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-          
-          console.log('Webhook called to update Google Sheets');
-        } catch (error) {
-          console.error('Webhook error:', error);
-        }
-      }
-      
       setShowAlert({ message: 'Registration updated successfully!', type: 'success' });
     } else {
       console.error('Could not find original registrant');
       setShowAlert({ message: 'Error: Could not find registrant to update', type: 'error' });
     }
   };
-
 
   const handleAdminLogin = () => {
     if (adminPassword === ADMIN_PASSWORD) {
@@ -2036,13 +1865,13 @@ const SalonDinners = () => {
                   <div className="bg-blue-100 rounded p-3 mb-3">
                     <p className="text-xs text-blue-800 font-medium mb-2">âœ¨ Auto-Sync Enabled:</p>
                     <ul className="text-xs text-blue-700 space-y-1">
-                      <li>• New registrations → <code>type: "registrants", action: "new"</code></li>
-                      <li>• New waitlist signups → <code>type: "waitlist", action: "new"</code></li>
-                      <li>• Invite requests → <code>type: "invite", action: "new"</code></li>
-                      <li>• Move to waitlist → <code>type: "registrants", action: "move_to_waitlist"</code></li>
-                      <li>• Move to invite → <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
-                      <li>• Move to registrant → <code>type: "waitlist", action: "move_to_registrant"</code></li>
-                      <li>• Delete → <code>type: "registrants/waitlist", action: "delete"</code></li>
+                      <li>â€¢ New registrations â†’ <code>type: "registrants", action: "new"</code></li>
+                      <li>â€¢ New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
+                      <li>â€¢ Invite requests â†’ <code>type: "invite", action: "new"</code></li>
+                      <li>â€¢ Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>â€¢ Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>â€¢ Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>â€¢ Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -2286,7 +2115,7 @@ const SalonDinners = () => {
 
               <div className="prose prose-lg max-w-none text-gray-700 space-y-4 mb-8">
                 <p>
-                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwill—leaders, thinkers, and faithful stewards—to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
+                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwillâ€”leaders, thinkers, and faithful stewardsâ€”to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
                 </p>
                 
                 <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">A Space for Unity and Understanding</h3>
@@ -2335,16 +2164,16 @@ const SalonDinners = () => {
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">New York City</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>• March 19, 2026</li>
-                      <li>• May 22, 2026</li>
-                      <li>• October 23, 2026</li>
-                      <li>• December 8, 2026</li>
+                      <li>â€¢ March 19, 2026</li>
+                      <li>â€¢ May 22, 2026</li>
+                      <li>â€¢ October 23, 2026</li>
+                      <li>â€¢ December 8, 2026</li>
                     </ul>
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">Orange County</h4>
                     <ul className="space-y-1 text-gray-600">
-                      <li>• August 19, 2026</li>
+                      <li>â€¢ August 19, 2026</li>
                     </ul>
                   </div>
                 </div>
@@ -2798,7 +2627,7 @@ const SalonDinners = () => {
                         {preferredDates.map(dateId => {
                           const date = eventDates.find(d => d.id === dateId);
                           return date ? (
-                            <li key={dateId}>• {date.label} - {date.location}</li>
+                            <li key={dateId}>â€¢ {date.label} - {date.location}</li>
                           ) : null;
                         })}
                       </ul>
