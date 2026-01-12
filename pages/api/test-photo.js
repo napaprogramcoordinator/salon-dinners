@@ -44,7 +44,8 @@ export default async function handler(req, res) {
       media: {
         mimeType: 'text/plain',
         body: stream
-      }
+      },
+      supportsAllDrives: true
     });
     
     console.log('File created with ID:', response.data.id);
@@ -55,7 +56,8 @@ export default async function handler(req, res) {
       requestBody: {
         role: 'reader',
         type: 'anyone'
-      }
+      },
+      supportsAllDrives: true
     });
     
     console.log('Permissions set successfully');
