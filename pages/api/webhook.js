@@ -5,7 +5,7 @@
 import { google } from 'googleapis';
 
 // Your Google Sheets configuration
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // Get from Google Sheets URL
+const SPREADSHEET_ID = '1_ey_NmF7pQWtPyYO4TvvNamDOe_nQCCAnYku83CbDsI'; // Get from Google Sheets URL
 const GOOGLE_DRIVE_FOLDER_ID = '1sfGf7XMBgmpvayoXHwc5-04igwwjVOdY';
 
 // Google Service Account credentials (you'll need to set these)
