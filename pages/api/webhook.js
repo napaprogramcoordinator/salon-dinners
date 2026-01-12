@@ -169,8 +169,8 @@ async function handleRegistrants(sheets, action, items) {
         food_allergies: item.foodAllergies || null,
         classification: item.classification || null,
         preferred_dates: preferredDatesStr,
-        added_to_waitlist: new Date().toISOString(),
-        picture: photoLink || null  // FIXED: was photo_link
+        picture: photoLink || null
+        // created_at will be set automatically by Supabase
       });
       
       await appendRows(sheets, 'Waitlist', [[
@@ -219,8 +219,8 @@ async function handleWaitlist(sheets, action, items) {
         food_allergies: item.foodAllergies || null,
         classification: item.classification || null,
         preferred_dates: preferredDatesStr,
-        added_to_waitlist: new Date().toISOString(),
-        picture: photoLink || null  // FIXED: was photo_link
+        picture: photoLink || null
+        // created_at will be set automatically by Supabase
       });
       
       return [
