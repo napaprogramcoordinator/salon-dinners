@@ -31,6 +31,10 @@ export default async function handler(req, res) {
     const testContent = 'This is a test file from Salon Dinners - ' + new Date().toISOString();
     const buffer = Buffer.from(testContent);
     
+    // Convert buffer to stream
+    const { Readable } = require('stream');
+    const stream = Readable.from(buffer);
+    
     const response = await drive.files.create({
       requestBody: {
         name: `salon_test_${Date.now()}.txt`,
@@ -39,7 +43,7 @@ export default async function handler(req, res) {
       },
       media: {
         mimeType: 'text/plain',
-        body: Buffer.from(buffer)
+        body: stream
       }
     });
     
