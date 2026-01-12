@@ -11,7 +11,7 @@ const GOOGLE_DRIVE_FOLDER_ID = '1sfGf7XMBgmpvayoXHwc5-04igwwjVOdY';
 // Google Service Account credentials (you'll need to set these)
 const GOOGLE_CREDENTIALS = {
   client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+  private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"/, '').replace(/"$/, ''),
 };
 
 export default async function handler(req, res) {
