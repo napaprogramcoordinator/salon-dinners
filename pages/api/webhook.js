@@ -126,7 +126,7 @@ async function handleRegistrants(sheets, action, items) {
     const rows = await Promise.all(items.map(async (item) => {
       const photoLink = await uploadPhotoToCloudinary(item.picture, item.name, item.email);
       
-      // Save to Supabase
+      // Save to Supabase - FIXED column names to match your table
       await saveToSupabase('registrations', {
         name: item.name,
         email: item.email,
@@ -134,11 +134,13 @@ async function handleRegistrants(sheets, action, items) {
         professional_title: item.professionalTitle || null,
         bio: item.bio || null,
         food_allergies: item.foodAllergies || null,
-        event_date: item.date || null,
+        date_id: item.dateId || null,
+        date_label: item.date || null,
         location: item.location || null,
         classification: item.group || null,
-        registration_date: item.timestamp || new Date().toISOString(),
-        photo_link: photoLink || null
+        timestamp: item.timestamp || new Date().toISOString(),
+        picture: photoLink || null,
+        moved_from_waitlist: item.movedFromWaitlist || false
       });
       
       return [
@@ -237,6 +239,7 @@ async function handleWaitlist(sheets, action, items) {
       
       const photoLink = await uploadPhotoToCloudinary(item.picture, item.name, item.email);
       
+      // Save to Supabase - FIXED column names
       await saveToSupabase('registrations', {
         name: item.name,
         email: item.email,
@@ -244,11 +247,13 @@ async function handleWaitlist(sheets, action, items) {
         professional_title: item.professionalTitle || null,
         bio: item.bio || null,
         food_allergies: item.foodAllergies || null,
-        event_date: item.date || null,
+        date_id: item.dateId || null,
+        date_label: item.date || null,
         location: item.location || null,
         classification: item.group || null,
-        registration_date: item.timestamp || new Date().toISOString(),
-        photo_link: photoLink || null
+        timestamp: item.timestamp || new Date().toISOString(),
+        picture: photoLink || null,
+        moved_from_waitlist: true
       });
       
       await appendRows(sheets, 'Registrations', [[
