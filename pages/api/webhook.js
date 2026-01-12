@@ -11,7 +11,7 @@ const GOOGLE_DRIVE_FOLDER_ID = '1sfGf7XMBgmpvayoXHwc5-04igwwjVOdY';
 // Google Service Account credentials (you'll need to set these)
 const GOOGLE_CREDENTIALS = {
   client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n').replace(/^"/, '').replace(/"$/, ''),
+  private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
 };
 
 export default async function handler(req, res) {
@@ -336,6 +336,10 @@ async function uploadPhotoToDrive(drive, base64Data, name, email) {
     // Create filename
     const filename = `${sanitizeFilename(name)}_${sanitizeFilename(email)}_${Date.now()}.jpg`;
     
+    // Convert buffer to stream (required by Drive API)
+    const { Readable } = require('stream');
+    const stream = Readable.from(buffer);
+    
     // Upload to Drive
     const response = await drive.files.create({
       requestBody: {
@@ -345,7 +349,7 @@ async function uploadPhotoToDrive(drive, base64Data, name, email) {
       },
       media: {
         mimeType: 'image/jpeg',
-        body: Buffer.from(buffer)
+        body: stream
       }
     });
     
