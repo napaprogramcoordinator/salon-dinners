@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Calendar, Users, CheckCircle, AlertCircle, X, Edit, Clock, Mail, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
 
 const SalonDinners = () => {
   const [currentPage, setCurrentPage] = useState('public');
@@ -78,80 +77,34 @@ const SalonDinners = () => {
     loadRegistrations();
     loadWaitlistData();
     loadInviteList();
-    loadWebhookUrl();
+    try {
+      const savedWebhook = localStorage.getItem('make-webhook');
+      if (savedWebhook) {
+        setMakeWebhookUrl(savedWebhook);
+      }
+    } catch (e) {
+      console.error('Error loading webhook URL:', e);
+    }
   }, []);
 
-  const loadInviteList = async () => {
+  const loadInviteList = () => {
     if (typeof window === 'undefined') return;
     try {
-      const { data, error } = await supabase
-        .from('invite_list')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      if (data) {
-        const formatted = data.map(item => ({
-          name: item.name,
-          email: item.email,
-          timestamp: item.timestamp,
-          movedFromRegistration: item.moved_from_registration,
-          movedFromWaitlist: item.moved_from_waitlist,
-          originalDate: item.original_date,
-          originalLocation: item.original_location
-        }));
-        setInviteList(formatted);
+      const result = localStorage.getItem('invite-list');
+      if (result) {
+        setInviteList(JSON.parse(result));
       }
     } catch (error) {
       console.error('Error loading invite list:', error);
     }
   };
 
-  const loadWebhookUrl = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'make_webhook_url')
-        .single();
-      
-      if (data && data.value) {
-        setMakeWebhookUrl(data.value);
-      }
-    } catch (e) {
-      console.error('Error loading webhook URL:', e);
-    }
-  };
-
   const loadWaitlistData = async () => {
     if (typeof window === 'undefined') return;
     try {
-      const { data, error } = await supabase
-        .from('waitlist')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      if (data) {
-        const formatted = data.map(item => ({
-          name: item.name,
-          email: item.email,
-          phone: item.phone,
-          professionalTitle: item.professional_title,
-          bio: item.bio,
-          foodAllergies: item.food_allergies,
-          picture: item.picture,
-          classification: item.classification,
-          preferredDates: item.preferred_dates,
-          timestamp: item.timestamp,
-          movedFromRegistration: item.moved_from_registration,
-          originalDate: item.original_date,
-          originalLocation: item.original_location,
-          pictureNote: item.picture_note
-        }));
-        setWaitlistData(formatted);
+      const result = localStorage.getItem('waitlist');
+      if (result) {
+        setWaitlistData(JSON.parse(result));
       }
     } catch (error) {
       console.error('Error loading waitlist:', error);
@@ -164,44 +117,28 @@ const SalonDinners = () => {
       return;
     }
     try {
-      const { data, error } = await supabase
-        .from('registrations')
-        .select('*');
-      
-      if (error) throw error;
-      
-      const grouped = {};
-      eventDates.forEach(date => {
-        grouped[date.id] = { liberal: [], moderate: [], conservative: [] };
-      });
-      
-      if (data) {
-        data.forEach(reg => {
-          if (grouped[reg.date_id] && grouped[reg.date_id][reg.classification]) {
-            grouped[reg.date_id][reg.classification].push({
-              name: reg.name,
-              email: reg.email,
-              phone: reg.phone,
-              professionalTitle: reg.professional_title,
-              bio: reg.bio,
-              foodAllergies: reg.food_allergies,
-              picture: reg.picture,
-              timestamp: reg.timestamp,
-              movedFromWaitlist: reg.moved_from_waitlist,
-              pictureNote: reg.picture_note
-            });
-          }
+      const result = localStorage.getItem('salon-registrations');
+      if (result) {
+        setRegistrations(JSON.parse(result));
+      } else {
+        const initialData = {};
+        eventDates.forEach(date => {
+          initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
         });
+        setRegistrations(initialData);
+        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
       }
-      
-      setRegistrations(grouped);
     } catch (error) {
-      console.error('Error loading registrations:', error);
       const initialData = {};
       eventDates.forEach(date => {
         initialData[date.id] = { liberal: [], moderate: [], conservative: [] };
       });
       setRegistrations(initialData);
+      try {
+        localStorage.setItem('salon-registrations', JSON.stringify(initialData));
+      } catch (e) {
+        console.error('Error saving initial data:', e);
+      }
     }
     setLoading(false);
   };
@@ -229,62 +166,49 @@ const SalonDinners = () => {
         originalLocation: person.location
       };
 
-      const { error: waitlistError } = await supabase
-        .from('waitlist')
-        .insert([{
-          name: waitlistEntry.name,
-          email: waitlistEntry.email,
-          phone: waitlistEntry.phone,
-          professional_title: waitlistEntry.professionalTitle,
-          bio: waitlistEntry.bio,
-          food_allergies: waitlistEntry.foodAllergies,
-          picture: waitlistEntry.picture,
-          classification: waitlistEntry.classification,
-          preferred_dates: waitlistEntry.preferredDates,
-          timestamp: waitlistEntry.timestamp,
-          moved_from_registration: true,
-          original_date: waitlistEntry.originalDate,
-          original_location: waitlistEntry.originalLocation
-        }]);
+      const updatedWaitlist = [...waitlistData, waitlistEntry];
+      
+      const updatedRegistrations = { ...registrations };
+      const dateRegs = updatedRegistrations[person.dateId][person.group];
+      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      
+      if (index !== -1) {
+        updatedRegistrations[person.dateId][person.group].splice(index, 1);
+        
+        localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+        
+        setWaitlistData(updatedWaitlist);
+        setRegistrations(updatedRegistrations);
+        setShowRemoveOptions(null);
 
-      if (waitlistError) throw waitlistError;
-
-      const { error: deleteError } = await supabase
-        .from('registrations')
-        .delete()
-        .eq('email', person.email)
-        .eq('date_id', person.dateId)
-        .eq('classification', person.group);
-
-      if (deleteError) throw deleteError;
-
-      await loadRegistrations();
-      await loadWaitlistData();
-      setShowRemoveOptions(null);
-
-      if (makeWebhookUrl) {
-        try {
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'registrants',
-              action: 'move_to_waitlist',
-              data: [{
-                ...waitlistEntry,
-                originalDateId: person.dateId,
-                originalGroup: person.group
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-        } catch (error) {
-          console.error('Make.com webhook error:', error);
+        // Send webhook to delete from Registrations and add to Waitlist
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                action: 'move_to_waitlist',
+                data: [{
+                  ...waitlistEntry,
+                  originalDateId: person.dateId,
+                  originalGroup: person.group
+                }],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
         }
-      }
 
-      setShowAlert({ message: `${person.name} moved to waitlist successfully!`, type: 'success' });
+        setShowAlert({ message: `${person.name} moved to waitlist successfully!`, type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      }
     } catch (error) {
       console.error('Error moving to waitlist:', error);
       setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
@@ -303,55 +227,59 @@ const SalonDinners = () => {
         originalLocation: person.location
       };
 
-      const { error: inviteError } = await supabase
-        .from('invite_list')
-        .insert([{
-          name: inviteEntry.name,
-          email: inviteEntry.email,
-          timestamp: inviteEntry.timestamp,
-          moved_from_registration: true,
-          original_date: inviteEntry.originalDate,
-          original_location: inviteEntry.originalLocation
-        }]);
-
-      if (inviteError) throw inviteError;
-
-      const { error: deleteError } = await supabase
-        .from('registrations')
-        .delete()
-        .eq('email', person.email)
-        .eq('date_id', person.dateId)
-        .eq('classification', person.group);
-
-      if (deleteError) throw deleteError;
-
-      await loadRegistrations();
-      await loadInviteList();
-      setShowRemoveOptions(null);
-
-      if (makeWebhookUrl) {
-        try {
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'registrants',
-              action: 'move_to_invite',
-              data: [{
-                ...inviteEntry,
-                originalDateId: person.dateId,
-                originalGroup: person.group
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-        } catch (error) {
-          console.error('Make.com webhook error:', error);
+      let currentInviteList = [];
+      try {
+        const stored = localStorage.getItem('invite-list');
+        if (stored) {
+          currentInviteList = JSON.parse(stored);
         }
+      } catch (e) {
+        currentInviteList = [];
       }
+      
+      const updatedInviteList = [...currentInviteList, inviteEntry];
+      
+      const updatedRegistrations = { ...registrations };
+      const dateRegs = updatedRegistrations[person.dateId][person.group];
+      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      
+      if (index !== -1) {
+        updatedRegistrations[person.dateId][person.group].splice(index, 1);
+        
+        localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+        
+        setInviteList(updatedInviteList);
+        setRegistrations(updatedRegistrations);
+        setShowRemoveOptions(null);
 
-      setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
+        // Send webhook to delete from Registrations and add to Invites
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                action: 'move_to_invite',
+                data: [{
+                  ...inviteEntry,
+                  originalDateId: person.dateId,
+                  originalGroup: person.group
+                }],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
+        }
+
+        setShowAlert({ message: `${person.name} moved to next year's invite list!`, type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      }
     } catch (error) {
       console.error('Error moving to invite list:', error);
       setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
@@ -361,43 +289,45 @@ const SalonDinners = () => {
   // Delete registrant permanently (with webhook)
   const deleteRegistrantPermanently = async (person) => {
     try {
-      const { error } = await supabase
-        .from('registrations')
-        .delete()
-        .eq('email', person.email)
-        .eq('date_id', person.dateId)
-        .eq('classification', person.group);
+      const updatedRegistrations = { ...registrations };
+      const dateRegs = updatedRegistrations[person.dateId][person.group];
+      const index = dateRegs.findIndex(p => p.email === person.email && p.timestamp === person.timestamp);
+      
+      if (index !== -1) {
+        updatedRegistrations[person.dateId][person.group].splice(index, 1);
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+        setRegistrations(updatedRegistrations);
+        setShowRemoveOptions(null);
 
-      if (error) throw error;
-
-      await loadRegistrations();
-      setShowRemoveOptions(null);
-
-      if (makeWebhookUrl) {
-        try {
-          await fetch(makeWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'registrants',
-              action: 'delete',
-              data: [{
-                email: person.email,
-                name: person.name,
-                dateId: person.dateId,
-                date: person.date,
-                group: person.group
-              }],
-              exportDate: new Date().toISOString(),
-              totalCount: 1
-            })
-          });
-        } catch (error) {
-          console.error('Make.com webhook error:', error);
+        // Send webhook to delete from Registrations
+        if (makeWebhookUrl) {
+          try {
+            await fetch(makeWebhookUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'registrants',
+                action: 'delete',
+                data: [{
+                  email: person.email,
+                  name: person.name,
+                  dateId: person.dateId,
+                  date: person.date,
+                  group: person.group
+                }],
+                exportDate: new Date().toISOString(),
+                totalCount: 1
+              })
+            });
+          } catch (error) {
+            console.error('Make.com webhook error:', error);
+          }
         }
-      }
 
-      setShowAlert({ message: `${person.name} has been permanently deleted.`, type: 'success' });
+        setShowAlert({ message: `${person.name} has been permanently deleted.`, type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error: Could not find registrant', type: 'error' });
+      }
     } catch (error) {
       console.error('Error deleting registrant:', error);
       setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
@@ -408,53 +338,47 @@ const SalonDinners = () => {
   const moveFromWaitlistToRegistration = async (waitlistIndex, dateId, group) => {
     const person = waitlistData[waitlistIndex];
     
+    const updatedRegistrations = { ...registrations };
+    const newRegistrant = {
+      name: person.name,
+      email: person.email,
+      phone: person.phone,
+      professionalTitle: person.professionalTitle,
+      bio: person.bio,
+      foodAllergies: person.foodAllergies,
+      picture: person.picture,
+      timestamp: new Date().toISOString(),
+      movedFromWaitlist: true
+    };
+    
+    updatedRegistrations[dateId][group].push(newRegistrant);
+    
+    const updatedWaitlist = [...waitlistData];
+    updatedWaitlist.splice(waitlistIndex, 1);
+    
     try {
-      const dateInfo = eventDates.find(d => d.id === dateId);
-      const newRegistrant = {
-        name: person.name,
-        email: person.email,
-        phone: person.phone,
-        professionalTitle: person.professionalTitle,
-        bio: person.bio,
-        foodAllergies: person.foodAllergies,
-        picture: person.picture,
-        timestamp: new Date().toISOString(),
-        movedFromWaitlist: true
-      };
+      const regString = JSON.stringify(updatedRegistrations);
+      const regSizeKB = new Blob([regString]).size / 1024;
+      console.log(`Registration data size after move: ${regSizeKB.toFixed(2)} KB`);
       
-      const { error: regError } = await supabase
-        .from('registrations')
-        .insert([{
-          name: newRegistrant.name,
-          email: newRegistrant.email,
-          phone: newRegistrant.phone,
-          professional_title: newRegistrant.professionalTitle,
-          bio: newRegistrant.bio,
-          food_allergies: newRegistrant.foodAllergies,
-          picture: newRegistrant.picture,
-          date_id: dateId,
-          date_label: dateInfo?.label,
-          location: dateInfo?.location,
-          classification: group,
-          timestamp: newRegistrant.timestamp,
-          moved_from_waitlist: true
-        }]);
-
-      if (regError) throw regError;
-
-      const { error: deleteError } = await supabase
-        .from('waitlist')
-        .delete()
-        .eq('email', person.email);
-
-      if (deleteError) throw deleteError;
-
-      await loadRegistrations();
-      await loadWaitlistData();
+      if (regSizeKB > 4500) {
+        console.warn('Data size exceeds limit after moving, removing picture');
+        const lastAdded = updatedRegistrations[dateId][group][updatedRegistrations[dateId][group].length - 1];
+        lastAdded.picture = null;
+        lastAdded.pictureNote = 'Picture removed due to storage limit';
+      }
+      
+      localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+      
+      setRegistrations(updatedRegistrations);
+      setWaitlistData(updatedWaitlist);
       setMovingFromWaitlist(null);
 
+      // Send webhook to delete from Waitlist and add to Registrations
       if (makeWebhookUrl) {
         try {
+          const dateInfo = eventDates.find(d => d.id === dateId);
           await fetch(makeWebhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -488,19 +412,16 @@ const SalonDinners = () => {
   // Delete from waitlist (with webhook)
   const deleteFromWaitlist = async (index) => {
     const person = waitlistData[index];
+    const updated = [...waitlistData];
+    updated.splice(index, 1);
     
     try {
-      const { error } = await supabase
-        .from('waitlist')
-        .delete()
-        .eq('email', person.email);
-
-      if (error) throw error;
-
-      await loadWaitlistData();
+      localStorage.setItem('waitlist', JSON.stringify(updated));
+      setWaitlistData(updated);
       setShowDeleteConfirm(null);
       setShowWaitlistRemoveOptions(null);
 
+      // Send webhook to delete from Waitlist
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -523,9 +444,9 @@ const SalonDinners = () => {
       }
 
       setShowAlert({ message: 'Removed from waitlist successfully!', type: 'success' });
-    } catch (error) {
-      console.error('Error deleting from waitlist:', error);
-      setShowAlert({ message: `Error: ${error.message}`, type: 'error' });
+    } catch (e) {
+      console.error('Error saving waitlist:', e);
+      setShowAlert({ message: `Error: ${e.message}`, type: 'error' });
     }
   };
 
@@ -541,28 +462,28 @@ const SalonDinners = () => {
         movedFromWaitlist: true
       };
 
-      const { error: inviteError } = await supabase
-        .from('invite_list')
-        .insert([{
-          name: inviteEntry.name,
-          email: inviteEntry.email,
-          timestamp: inviteEntry.timestamp,
-          moved_from_waitlist: true
-        }]);
-
-      if (inviteError) throw inviteError;
-
-      const { error: deleteError } = await supabase
-        .from('waitlist')
-        .delete()
-        .eq('email', person.email);
-
-      if (deleteError) throw deleteError;
-
-      await loadInviteList();
-      await loadWaitlistData();
+      let currentInviteList = [];
+      try {
+        const stored = localStorage.getItem('invite-list');
+        if (stored) {
+          currentInviteList = JSON.parse(stored);
+        }
+      } catch (e) {
+        currentInviteList = [];
+      }
+      
+      const updatedInviteList = [...currentInviteList, inviteEntry];
+      const updatedWaitlist = [...waitlistData];
+      updatedWaitlist.splice(index, 1);
+      
+      localStorage.setItem('invite-list', JSON.stringify(updatedInviteList));
+      localStorage.setItem('waitlist', JSON.stringify(updatedWaitlist));
+      
+      setInviteList(updatedInviteList);
+      setWaitlistData(updatedWaitlist);
       setShowWaitlistRemoveOptions(null);
 
+      // Send webhook to delete from Waitlist and add to Invites
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -848,26 +769,38 @@ const SalonDinners = () => {
       };
 
       try {
-        const { data, error } = await supabase
-          .from('waitlist')
-          .insert([{
-            name: waitlistEntry.name,
-            email: waitlistEntry.email,
-            phone: waitlistEntry.phone,
-            professional_title: waitlistEntry.professionalTitle,
-            bio: waitlistEntry.bio,
-            food_allergies: waitlistEntry.foodAllergies,
-            picture: waitlistEntry.picture,
-            classification: waitlistEntry.classification,
-            preferred_dates: waitlistEntry.preferredDates,
-            timestamp: waitlistEntry.timestamp
-          }])
-          .select();
-
-        if (error) throw error;
+        let waitlist = [];
+        try {
+          const result = localStorage.getItem('waitlist');
+          if (result) {
+            waitlist = JSON.parse(result);
+          }
+        } catch (getError) {
+          console.log('Waitlist does not exist yet, creating new one');
+          waitlist = [];
+        }
         
-        await loadWaitlistData();
+        waitlist.push(waitlistEntry);
+        console.log('Saving waitlist:', waitlist);
         
+        const waitlistString = JSON.stringify(waitlist);
+        const waitlistSizeKB = new Blob([waitlistString]).size / 1024;
+        console.log(`Waitlist size: ${waitlistSizeKB.toFixed(2)} KB`);
+        
+        if (waitlistSizeKB > 4500) {
+          console.warn('Waitlist size exceeds limit, removing picture');
+          waitlist[waitlist.length - 1].picture = null;
+          waitlist[waitlist.length - 1].pictureNote = 'Picture removed due to storage limit';
+          const reducedWaitlistString = JSON.stringify(waitlist);
+          localStorage.setItem('waitlist', reducedWaitlistString);
+          setShowAlert({ message: 'Added to waitlist! Note: Picture could not be saved due to storage limits.', type: 'success' });
+        } else {
+          localStorage.setItem('waitlist', waitlistString);
+        }
+        
+        setWaitlistData(waitlist);
+        
+        // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
             await fetch(makeWebhookUrl, {
@@ -896,7 +829,8 @@ const SalonDinners = () => {
     } else {
       console.log('Adding to regular registration for date:', selectedDate);
       try {
-        const date = eventDates.find(d => d.id === selectedDate);
+        const updatedRegistrations = { ...registrations };
+        
         const registrationEntry = {
           name: formData.name,
           email: formData.email,
@@ -908,32 +842,31 @@ const SalonDinners = () => {
           timestamp: new Date().toISOString()
         };
         
-        const { data, error } = await supabase
-          .from('registrations')
-          .insert([{
-            name: registrationEntry.name,
-            email: registrationEntry.email,
-            phone: registrationEntry.phone,
-            professional_title: registrationEntry.professionalTitle,
-            bio: registrationEntry.bio,
-            food_allergies: registrationEntry.foodAllergies,
-            picture: registrationEntry.picture,
-            date_id: selectedDate,
-            date_label: date?.label,
-            location: date?.location,
-            classification: classification,
-            timestamp: registrationEntry.timestamp
-          }])
-          .select();
-
-        if (error) throw error;
+        updatedRegistrations[selectedDate][classification].push(registrationEntry);
         
-        await loadRegistrations();
+        const dataString = JSON.stringify(updatedRegistrations);
+        const dataSizeKB = new Blob([dataString]).size / 1024;
+        console.log(`Data size: ${dataSizeKB.toFixed(2)} KB`);
         
+        if (dataSizeKB > 4500) {
+          console.warn('Data size exceeds limit, removing picture from this registration');
+          const lastRegistrant = updatedRegistrations[selectedDate][classification][updatedRegistrations[selectedDate][classification].length - 1];
+          lastRegistrant.picture = null;
+          lastRegistrant.pictureNote = 'Picture removed due to storage limit';
+          const reducedDataString = JSON.stringify(updatedRegistrations);
+          localStorage.setItem('salon-registrations', reducedDataString);
+          setShowAlert({ message: 'Registration successful! Note: Picture could not be saved due to storage limits.', type: 'success' });
+        } else {
+          localStorage.setItem('salon-registrations', dataString);
+        }
+        
+        setRegistrations(updatedRegistrations);
         console.log('Regular registration successful');
         
+        // Send to webhook with action: "new"
         if (makeWebhookUrl) {
           try {
+            const date = eventDates.find(d => d.id === selectedDate);
             const registrantData = {
               ...registrationEntry,
               date: date?.label,
@@ -1040,26 +973,14 @@ const SalonDinners = () => {
 
   const sendToMake = async () => {
     if (!makeWebhookUrl) {
-      setShowAlert({ message: 'Please enter your webhook URL first', type: 'error' });
+      setShowAlert({ message: 'Please enter your Make.com webhook URL first', type: 'error' });
       return;
     }
-    
     try {
       const allData = getAllRegistrants();
-      
-      if (allData.length === 0) {
-        setShowAlert({ message: 'No registrants to export', type: 'error' });
-        return;
-      }
-      
-      console.log('Sending to webhook:', makeWebhookUrl);
-      console.log('Data count:', allData.length);
-      
       const response = await fetch(makeWebhookUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'registrants',
           action: 'bulk_export',
@@ -1068,68 +989,25 @@ const SalonDinners = () => {
           totalCount: allData.length
         })
       });
-      
-      console.log('Response status:', response.status);
-      
-      const responseText = await response.text();
-      console.log('Response body:', responseText);
-      
-      try {
-        const responseData = JSON.parse(responseText);
-        if (responseData.success) {
-          setShowAlert({ 
-            message: `Successfully exported ${allData.length} registrants! Check your Google Sheet.`, 
-            type: 'success' 
-          });
-        } else {
-          setShowAlert({ 
-            message: `Export failed: ${responseData.error || 'Unknown error'}`, 
-            type: 'error' 
-          });
-        }
-      } catch (e) {
-        if (response.ok) {
-          setShowAlert({ 
-            message: `Exported ${allData.length} registrants! Check your Google Sheet.`, 
-            type: 'success' 
-          });
-        } else {
-          setShowAlert({ 
-            message: 'Export may have failed. Check the browser console and Google Sheet.', 
-            type: 'error' 
-          });
-        }
+      if (response.ok) {
+        setShowAlert({ message: 'Successfully sent registrants to Make.com! Check your Google Sheet.', type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error sending to Make.com. Please check your webhook URL.', type: 'error' });
       }
-      
     } catch (error) {
-      console.error('Fetch error:', error);
-      setShowAlert({ 
-        message: `Network error: ${error.message}. Make sure your webhook URL is correct and the script is deployed.`, 
-        type: 'error' 
-      });
+      setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
     }
   };
 
   const sendWaitlistToMake = async () => {
     if (!makeWebhookUrl) {
-      setShowAlert({ message: 'Please enter your webhook URL first', type: 'error' });
+      setShowAlert({ message: 'Please enter your Make.com webhook URL first', type: 'error' });
       return;
     }
-    
     try {
-      if (waitlistData.length === 0) {
-        setShowAlert({ message: 'No waitlist entries to export', type: 'error' });
-        return;
-      }
-      
-      console.log('Sending waitlist to webhook:', makeWebhookUrl);
-      console.log('Data count:', waitlistData.length);
-      
       const response = await fetch(makeWebhookUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'waitlist',
           action: 'bulk_export',
@@ -1138,45 +1016,13 @@ const SalonDinners = () => {
           totalCount: waitlistData.length
         })
       });
-      
-      console.log('Response status:', response.status);
-      
-      const responseText = await response.text();
-      console.log('Response body:', responseText);
-      
-      try {
-        const responseData = JSON.parse(responseText);
-        if (responseData.success) {
-          setShowAlert({ 
-            message: `Successfully exported ${waitlistData.length} waitlist entries! Check your Google Sheet.`, 
-            type: 'success' 
-          });
-        } else {
-          setShowAlert({ 
-            message: `Export failed: ${responseData.error || 'Unknown error'}`, 
-            type: 'error' 
-          });
-        }
-      } catch (e) {
-        if (response.ok) {
-          setShowAlert({ 
-            message: `Exported ${waitlistData.length} waitlist entries! Check your Google Sheet.`, 
-            type: 'success' 
-          });
-        } else {
-          setShowAlert({ 
-            message: 'Export may have failed. Check the browser console and Google Sheet.', 
-            type: 'error' 
-          });
-        }
+      if (response.ok) {
+        setShowAlert({ message: 'Successfully sent waitlist to Make.com! Check your Google Sheet.', type: 'success' });
+      } else {
+        setShowAlert({ message: 'Error sending waitlist to Make.com. Please check your webhook URL.', type: 'error' });
       }
-      
     } catch (error) {
-      console.error('Fetch error:', error);
-      setShowAlert({ 
-        message: `Network error: ${error.message}. Make sure your webhook URL is correct.`, 
-        type: 'error' 
-      });
+      setShowAlert({ message: 'Error: ' + error.message, type: 'error' });
     }
   };
 
@@ -1262,44 +1108,95 @@ const SalonDinners = () => {
       return;
     }
 
-    try {
-      const { error: deleteError } = await supabase
-        .from('registrations')
-        .delete()
-        .eq('email', original.email)
-        .eq('date_id', original.dateId)
-        .eq('classification', original.group);
-
-      if (deleteError) throw deleteError;
-
-      const dateInfo = eventDates.find(d => d.id === edited.dateId);
-      const { error: insertError } = await supabase
-        .from('registrations')
-        .insert([{
-          name: edited.name,
-          email: edited.email,
-          phone: edited.phone,
-          professional_title: edited.professionalTitle,
-          bio: edited.bio,
-          food_allergies: edited.foodAllergies,
-          picture: edited.picture,
-          date_id: edited.dateId,
-          date_label: dateInfo?.label,
-          location: dateInfo?.location,
-          classification: edited.group,
-          timestamp: original.timestamp
-        }]);
-
-      if (insertError) throw insertError;
-
-      await loadRegistrations();
+    const updatedRegistrations = { ...registrations };
+    
+    const dateRegs = updatedRegistrations[original.dateId][original.group];
+    const originalIndex = dateRegs.findIndex(p => 
+      p.email === original.email && p.timestamp === original.timestamp
+    );
+    
+    console.log('Found original at index:', originalIndex);
+    
+    if (originalIndex !== -1) {
+      updatedRegistrations[original.dateId][original.group].splice(originalIndex, 1);
+      
+      const updatedRegistrant = {
+        name: edited.name,
+        email: edited.email,
+        phone: edited.phone,
+        professionalTitle: edited.professionalTitle,
+        bio: edited.bio,
+        foodAllergies: edited.foodAllergies,
+        picture: edited.picture,
+        timestamp: original.timestamp
+      };
+      
+      updatedRegistrations[edited.dateId][edited.group].push(updatedRegistrant);
+      
+      try {
+        localStorage.setItem('salon-registrations', JSON.stringify(updatedRegistrations));
+      } catch (e) {
+        console.error('Error saving registrations:', e);
+      }
+      setRegistrations(updatedRegistrations);
       setEditingRegistrant(null);
+      
+      // Send webhook to update Google Sheets
+      if (makeWebhookUrl) {
+        try {
+          const dateInfo = eventDates.find(d => d.id === edited.dateId);
+          
+          // First, delete the old entry
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'registrants',
+              action: 'delete',
+              data: [{
+                email: original.email,
+                name: original.name,
+                dateId: original.dateId,
+                date: eventDates.find(d => d.id === original.dateId)?.label,
+                group: original.group
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+          
+          // Then, add the updated entry
+          await fetch(makeWebhookUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'registrants',
+              action: 'new',
+              data: [{
+                ...updatedRegistrant,
+                date: dateInfo?.label,
+                location: dateInfo?.location,
+                dateId: edited.dateId,
+                group: edited.group
+              }],
+              exportDate: new Date().toISOString(),
+              totalCount: 1
+            })
+          });
+          
+          console.log('Webhook called to update Google Sheets');
+        } catch (error) {
+          console.error('Webhook error:', error);
+        }
+      }
+      
       setShowAlert({ message: 'Registration updated successfully!', type: 'success' });
-    } catch (error) {
-      console.error('Error saving edited registrant:', error);
-      setShowAlert({ message: 'Error: Could not update registration', type: 'error' });
+    } else {
+      console.error('Could not find original registrant');
+      setShowAlert({ message: 'Error: Could not find registrant to update', type: 'error' });
     }
   };
+
 
   const handleAdminLogin = () => {
     if (adminPassword === ADMIN_PASSWORD) {
@@ -1326,21 +1223,28 @@ const SalonDinners = () => {
       return;
     }
     
+    const inviteData = {
+      name: inviteFormData.name,
+      email: inviteFormData.email,
+      timestamp: new Date().toISOString()
+    };
+    
     try {
-      const inviteData = {
-        name: inviteFormData.name,
-        email: inviteFormData.email,
-        timestamp: new Date().toISOString()
-      };
+      let inviteListData = [];
+      try {
+        const result = localStorage.getItem('invite-list');
+        if (result) {
+          inviteListData = JSON.parse(result);
+        }
+      } catch (e) {
+        inviteListData = [];
+      }
       
-      const { error } = await supabase
-        .from('invite_list')
-        .insert([inviteData]);
-
-      if (error) throw error;
-
-      await loadInviteList();
+      inviteListData.push(inviteData);
+      localStorage.setItem('invite-list', JSON.stringify(inviteListData));
+      setInviteList(inviteListData);
       
+      // Send to webhook with action: "new"
       if (makeWebhookUrl) {
         try {
           await fetch(makeWebhookUrl, {
@@ -1363,7 +1267,6 @@ const SalonDinners = () => {
       setInviteFormData({ name: '', email: '' });
       setStep('landing');
     } catch (error) {
-      console.error('Error saving invite:', error);
       setShowAlert({ message: 'Error saving your information. Please try again.', type: 'error' });
     }
   };
@@ -2004,23 +1907,9 @@ const SalonDinners = () => {
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3"
                   />
                   <button
-                    onClick={async () => {
-                      try {
-                        const { error } = await supabase
-                          .from('settings')
-                          .upsert({ 
-                            key: 'make_webhook_url', 
-                            value: makeWebhookUrl 
-                          }, { 
-                            onConflict: 'key' 
-                          });
-                        
-                        if (error) throw error;
-                        setShowAlert({ message: 'Webhook URL saved to Supabase! All new submissions will be sent automatically.', type: 'success' });
-                      } catch (error) {
-                        console.error('Error saving webhook URL:', error);
-                        setShowAlert({ message: 'Error saving webhook URL: ' + error.message, type: 'error' });
-                      }
+                    onClick={() => {
+                      localStorage.setItem('make-webhook', makeWebhookUrl);
+                      setShowAlert({ message: 'Webhook URL saved! All new submissions will be sent automatically.', type: 'success' });
                     }}
                     className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 mb-3"
                   >
@@ -2028,14 +1917,14 @@ const SalonDinners = () => {
                   </button>
                   <div className="bg-blue-100 rounded p-3 mb-3">
                     <p className="text-xs text-blue-800 font-medium mb-2">âœ¨ Auto-Sync Enabled:</p>
-                    <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                      <li>New registrations â†’ <code>type: "registrants", action: "new"</code></li>
-                      <li>New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
-                      <li>Invite requests â†’ <code>type: "invite", action: "new"</code></li>
-                      <li>Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
-                      <li>Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
-                      <li>Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
-                      <li>Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
+                    <ul className="text-xs text-blue-700 space-y-1">
+                      <li>â€¢ New registrations â†’ <code>type: "registrants", action: "new"</code></li>
+                      <li>â€¢ New waitlist signups â†’ <code>type: "waitlist", action: "new"</code></li>
+                      <li>â€¢ Invite requests â†’ <code>type: "invite", action: "new"</code></li>
+                      <li>â€¢ Move to waitlist â†’ <code>type: "registrants", action: "move_to_waitlist"</code></li>
+                      <li>â€¢ Move to invite â†’ <code>type: "registrants/waitlist", action: "move_to_invite"</code></li>
+                      <li>â€¢ Move to registrant â†’ <code>type: "waitlist", action: "move_to_registrant"</code></li>
+                      <li>â€¢ Delete â†’ <code>type: "registrants/waitlist", action: "delete"</code></li>
                     </ul>
                   </div>
                   <p className="text-xs text-gray-600 mb-3">
@@ -2279,7 +2168,7 @@ const SalonDinners = () => {
 
               <div className="prose prose-lg max-w-none text-gray-700 space-y-4 mb-8">
                 <p>
-                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwill leaders, thinkers, and faithful stewards,to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
+                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwillâ€”leaders, thinkers, and faithful stewardsâ€”to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
                 </p>
                 
                 <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">A Space for Unity and Understanding</h3>
@@ -2300,7 +2189,7 @@ const SalonDinners = () => {
                   Each Salon Dinner offers a warm and welcoming atmosphere in which guests are invited to reflect, connect, and collaborate. A typical evening includes:
                 </p>
                 <ul className="list-disc pl-6 space-y-1">
-                  <li>Mass</li>
+                  <li>Optional Mass</li>
                   <li>Holy Rosary</li>
                   <li>Reception and Fellowship</li>
                   <li>Dinner for an intimate group of attendees</li>
@@ -2327,17 +2216,17 @@ const SalonDinners = () => {
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">New York City</h4>
-                    <ul className="space-y-1 text-gray-600 list-disc list-inside">
-                      <li>March 19, 2026</li>
-                      <li>May 22, 2026</li>
-                      <li>October 23, 2026</li>
-                      <li>December 8, 2026</li>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>â€¢ March 19, 2026</li>
+                      <li>â€¢ May 22, 2026</li>
+                      <li>â€¢ October 23, 2026</li>
+                      <li>â€¢ December 8, 2026</li>
                     </ul>
                   </div>
                   <div>
                     <h4 className="font-semibold text-gray-700 mb-2">Orange County</h4>
-                    <ul className="space-y-1 text-gray-600 list-disc list-inside">
-                      <li>August 19, 2026</li>
+                    <ul className="space-y-1 text-gray-600">
+                      <li>â€¢ August 19, 2026</li>
                     </ul>
                   </div>
                 </div>
@@ -2791,7 +2680,7 @@ const SalonDinners = () => {
                         {preferredDates.map(dateId => {
                           const date = eventDates.find(d => d.id === dateId);
                           return date ? (
-                            <li key={dateId}>{date.label} - {date.location}</li>
+                            <li key={dateId}>â€¢ {date.label} - {date.location}</li>
                           ) : null;
                         })}
                       </ul>
