@@ -1,14 +1,21 @@
 // pages/api/webhook.js
 // This API route receives webhooks and writes to Google Sheets
-// No CORS issues because it's server-side!
+// Photos uploaded to Cloudinary
 
 import { google } from 'googleapis';
+import { v2 as cloudinary } from 'cloudinary';
+
+// Cloudinary configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 // Your Google Sheets configuration
 const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID;
-const GOOGLE_DRIVE_FOLDER_ID = '1sfGf7XMBgmpvayoXHwc5-04igwwjVOdY';
 
-// Google Service Account credentials (you'll need to set these)
+// Google Service Account credentials
 const GOOGLE_CREDENTIALS = {
   client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -49,15 +56,14 @@ export default async function handler(req, res) {
     });
 
     const sheets = google.sheets({ version: 'v4', auth });
-    const drive = google.drive({ version: 'v3', auth });
 
     console.log('Google auth initialized');
 
     // Route to appropriate handler
     if (type === 'registrants') {
-      await handleRegistrants(sheets, drive, action, data);
+      await handleRegistrants(sheets, action, data);
     } else if (type === 'waitlist') {
-      await handleWaitlist(sheets, drive, action, data);
+      await handleWaitlist(sheets, action, data);
     } else if (type === 'invite') {
       await handleInvites(sheets, action, data);
     }
@@ -82,13 +88,13 @@ export default async function handler(req, res) {
 /**
  * Handle registrants
  */
-async function handleRegistrants(sheets, drive, action, items) {
+async function handleRegistrants(sheets, action, items) {
   const sheetName = 'Registrations';
 
   if (action === 'new' || action === 'bulk_export') {
     // Add new registrations
     const rows = await Promise.all(items.map(async (item) => {
-      const photoLink = await uploadPhotoToDrive(drive, item.picture, item.name, item.email);
+      const photoLink = await uploadPhotoToCloudinary(item.picture, item.name, item.email);
       
       return [
         item.name || '',
@@ -112,7 +118,7 @@ async function handleRegistrants(sheets, drive, action, items) {
     for (const item of items) {
       await deleteRowByEmail(sheets, sheetName, item.email);
       
-      const photoLink = await uploadPhotoToDrive(drive, item.picture, item.name, item.email);
+      const photoLink = await uploadPhotoToCloudinary(item.picture, item.name, item.email);
       const row = [
         item.name || '',
         item.email || '',
@@ -154,12 +160,12 @@ async function handleRegistrants(sheets, drive, action, items) {
 /**
  * Handle waitlist
  */
-async function handleWaitlist(sheets, drive, action, items) {
+async function handleWaitlist(sheets, action, items) {
   const sheetName = 'Waitlist';
 
   if (action === 'new' || action === 'bulk_export') {
     const rows = await Promise.all(items.map(async (item) => {
-      const photoLink = await uploadPhotoToDrive(drive, item.picture, item.name, item.email);
+      const photoLink = await uploadPhotoToCloudinary(item.picture, item.name, item.email);
       
       return [
         item.name || '',
@@ -181,7 +187,7 @@ async function handleWaitlist(sheets, drive, action, items) {
     for (const item of items) {
       await deleteRowByEmail(sheets, sheetName, item.email);
       
-      const photoLink = await uploadPhotoToDrive(drive, item.picture, item.name, item.email);
+      const photoLink = await uploadPhotoToCloudinary(item.picture, item.name, item.email);
       const row = [
         item.name || '',
         item.email || '',
@@ -312,9 +318,9 @@ async function deleteRowByEmail(sheets, sheetName, email) {
 }
 
 /**
- * Upload photo to Google Drive
+ * Upload photo to Cloudinary
  */
-async function uploadPhotoToDrive(drive, base64Data, name, email) {
+async function uploadPhotoToCloudinary(base64Data, name, email) {
   if (!base64Data || base64Data === '') {
     return '';
   }
@@ -324,54 +330,32 @@ async function uploadPhotoToDrive(drive, base64Data, name, email) {
   }
   
   try {
-    // Remove data URL prefix if present
+    console.log(`Uploading photo for ${name}...`);
+    
+    // Cloudinary expects data:image format
     let imageData = base64Data;
-    if (base64Data.includes('base64,')) {
-      imageData = base64Data.split('base64,')[1];
+    if (!imageData.startsWith('data:')) {
+      // Add data URL prefix if missing
+      imageData = `data:image/jpeg;base64,${base64Data}`;
     }
     
-    // Convert base64 to buffer
-    const buffer = Buffer.from(imageData, 'base64');
+    // Create public_id (filename in Cloudinary)
+    const publicId = `salon-dinners/${sanitizeFilename(name)}_${sanitizeFilename(email)}_${Date.now()}`;
     
-    // Create filename
-    const filename = `${sanitizeFilename(name)}_${sanitizeFilename(email)}_${Date.now()}.jpg`;
-    
-    // Convert buffer to stream (required by Drive API)
-    const { Readable } = require('stream');
-    const stream = Readable.from(buffer);
-    
-    // Upload to Drive
-    const response = await drive.files.create({
-      requestBody: {
-        name: filename,
-        parents: [GOOGLE_DRIVE_FOLDER_ID],
-        mimeType: 'image/jpeg'
-      },
-      media: {
-        mimeType: 'image/jpeg',
-        body: stream
-      },
-      supportsAllDrives: true
+    // Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(imageData, {
+      public_id: publicId,
+      folder: 'salon-dinners',
+      resource_type: 'image',
+      overwrite: false
     });
     
-    // Make file publicly accessible
-    await drive.permissions.create({
-      fileId: response.data.id,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone'
-      },
-      supportsAllDrives: true
-    });
+    console.log(`Photo uploaded to Cloudinary: ${result.secure_url}`);
     
-    // Return download link
-    const downloadLink = `https://drive.google.com/uc?export=download&id=${response.data.id}`;
-    console.log(`Photo uploaded: ${downloadLink}`);
-    
-    return downloadLink;
+    return result.secure_url;
     
   } catch (error) {
-    console.error('Photo upload error:', error);
+    console.error('Cloudinary upload error:', error);
     return '';
   }
 }
