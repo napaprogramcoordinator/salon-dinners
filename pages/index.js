@@ -153,9 +153,13 @@ const SalonDinners = () => {
         });
         
         data.forEach(row => {
-          // Find the date ID from the label
-          const dateInfo = eventDates.find(d => d.label === row.event_date);
-          const dateId = dateInfo ? dateInfo.id : 'date1';
+          // Find the date ID from the date_id column (or match by date_label)
+          let dateId = row.date_id;
+          if (!dateId) {
+            // Fallback: try to find by label
+            const dateInfo = eventDates.find(d => d.label === row.date_label);
+            dateId = dateInfo ? dateInfo.id : 'date1';
+          }
           
           const classification = (row.classification || 'moderate').toLowerCase();
           
@@ -167,8 +171,8 @@ const SalonDinners = () => {
               professionalTitle: row.professional_title || '',
               bio: row.bio || '',
               foodAllergies: row.food_allergies || '',
-              picture: row.photo_link || '',
-              timestamp: row.registration_date || row.created_at
+              picture: row.picture || '',
+              timestamp: row.timestamp || row.created_at
             });
           }
         });
@@ -2202,7 +2206,7 @@ const SalonDinners = () => {
 
               <div className="prose prose-lg max-w-none text-gray-700 space-y-4 mb-8">
                 <p>
-                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwill leaders, thinkers, and faithful stewards, to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
+                  Welcome to the <strong>Salon Dinner Series</strong>, a Napa Institute initiative created to bring together people of goodwillâ€”leaders, thinkers, and faithful stewardsâ€”to engage in thoughtful dialogue and strengthen the bonds that unite us. These gatherings are designed to inspire trust, build community, and encourage collaboration in service of the Kingdom of God.
                 </p>
                 
                 <h3 className="text-xl font-semibold text-gray-800 mt-6 mb-3">A Space for Unity and Understanding</h3>
@@ -2223,7 +2227,7 @@ const SalonDinners = () => {
                   Each Salon Dinner offers a warm and welcoming atmosphere in which guests are invited to reflect, connect, and collaborate. A typical evening includes:
                 </p>
                 <ul className="list-disc pl-6 space-y-1">
-                  <li>Mass</li>
+                  <li>Optional Mass</li>
                   <li>Holy Rosary</li>
                   <li>Reception and Fellowship</li>
                   <li>Dinner for an intimate group of attendees</li>
